@@ -1,0 +1,26 @@
+# build output
+build/
+dist/
+frontend/dist/
+*.tsbuildinfo
+
+# dependencies
+node_modules/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# local data, models and logs (the app keeps them in ~/Library/Application Support/Local Office)
+data/
+models/
+*.gguf
+*.log
+
+# generated test inputs (scripts/make_samples.py, scripts/make_demo.py)
+samples/
+
+# macOS
+.DS_Store

@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-accent: #2f5bd3;
+  --color-accent-soft: #e8eefc;
+  --font-sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+}
+
+html, body, #root { height: 100%; }
+body { background: #f6f7f9; color: #1d2330; }
+
+.prose-answer { line-height: 1.6; }
+.prose-answer p { margin: 0.4em 0; }
+.prose-answer ul, .prose-answer ol { margin: 0.4em 0; padding-left: 1.4em; }
+.prose-answer ul { list-style: disc; }
+.prose-answer ol { list-style: decimal; }
+.prose-answer table { border-collapse: collapse; margin: 0.6em 0; font-size: 0.92em; }
+.prose-answer th, .prose-answer td { border: 1px solid #d6dbe4; padding: 4px 10px; text-align: left; }
+.prose-answer th { background: #f0f2f6; }
+.prose-answer code { background: #f0f2f6; padding: 1px 4px; border-radius: 4px; }
+.prose-answer h1, .prose-answer h2, .prose-answer h3 { font-weight: 600; margin: 0.6em 0 0.3em; }
