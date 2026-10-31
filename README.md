@@ -72,6 +72,13 @@ uv run scripts/make_demo.py                                       # English demo
 
 Running from source needs a `llama-server` binary: `packaging/build_llama.sh` builds one into `build/bin`, or set `LLAMA_SERVER`. `DATA_DIR` and `MODELS_DIR` override the data and model folders, which is useful to reuse models you've already downloaded.
 
+### Linux (from source)
+
+Tested on Ubuntu 24.04 with an RTX 3060 (6 GB). `packaging/build_llama.sh` builds llama-server with CUDA when `nvcc` is
+installed (CPU otherwise), then run the backend as above and open http://localhost:8000. Data lives in
+`~/.local/share/local-office/`. When the GPU can't hold all three models, OCR and the search index run on the CPU so the
+assistant keeps the GPU (~80 tokens/s for the 4B model on the 3060).
+
 ```
 backend/app/     FastAPI app: ingest (OCR, chunking), rag, wiki, sources (folders), skills + agent + tools,
                  models + runtime (llama-server supervisor), desktop entry point

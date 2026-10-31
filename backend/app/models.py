@@ -15,7 +15,7 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from . import runtime
-from .config import HOST_CHIP, HOST_RAM_GB, MODELS_DIR, ROLES
+from .config import HOST_CHIP, HOST_RAM_GB, HOST_VRAM_MB, MAC, MODELS_DIR, ROLES
 from .db import db, get_setting, recreate_vec_table, set_setting, vec
 
 _http = httpx.AsyncClient(timeout=httpx.Timeout(600, connect=5))
@@ -49,11 +49,22 @@ class Spec:
     def args(self) -> list[str]:
         # 2 slots: a chat answer and background work (OCR / wiki) can run together. The prompt cache is capped:
         # llama-server's default (8 GB of RAM) would make a 4B model use more memory than the weights themselves.
+        # On a Mac all layers go to the GPU (unified memory). A discrete GPU has its own, smaller memory: leave the
+        # layer count to llama-server's --fit, which offloads what fits in free VRAM and keeps the rest on the CPU.
         args = ["-m", str(runtime.model_path(self.repo, self.file)), "-c", str(self.context),
-                "-ngl", "999", "-fa", "on", "-np", "2", "--cache-ram", "512", *self.flags]
+                *(["-ngl", "999"] if MAC else []), "-fa", "on", "-np", "2", "--cache-ram", "512", *self.flags]
         if self.mmproj:
             args += ["--mmproj", str(runtime.model_path(self.repo, self.mmproj))]
+        if self.role != "assistant" and 0 < HOST_VRAM_MB < sum(s.vram_mb for s in _active.values()):
+            # The GPU can't hold all three models, and --fit gives VRAM to whichever server starts first. Keep it for
+            # the assistant: on an RTX 3060 (6 GB) chat runs at ~80 tokens/s instead of ~8, ingestion ~35% slower.
+            args += ["-ngl", "0", "--no-mmproj-offload"]
         return args
+
+    @property
+    def vram_mb(self) -> int:
+        """Rough GPU memory in use: weights plus context and compute buffers (measured on CUDA, within ~10%)."""
+        return int(self.size_mb * 1.3) + 500
 
     @property
     def downloaded(self) -> bool:
