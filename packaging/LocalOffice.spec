@@ -21,8 +21,8 @@ coll = COLLECT(exe, a.binaries, a.datas, name="Local Office")
 app = BUNDLE(
     coll, name="Local Office.app", icon=str(ROOT / "build/LocalOffice.icns"), bundle_identifier="app.localoffice.desktop",
     info_plist={
-        "CFBundleShortVersionString": "0.1.0",
-        "CFBundleVersion": "1",
+        "CFBundleShortVersionString": "0.2.0",
+        "CFBundleVersion": "2",
         "LSMinimumSystemVersion": "14.0",
         "NSHighResolutionCapable": True,
         "LSApplicationCategoryType": "public.app-category.productivity",
