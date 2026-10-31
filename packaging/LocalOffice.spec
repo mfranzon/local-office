@@ -31,8 +31,8 @@ if not WINDOWS:
     app = BUNDLE(
         coll, name="Local Office.app", icon=str(ROOT / "build/LocalOffice.icns"), bundle_identifier="app.localoffice.desktop",
         info_plist={
-            "CFBundleShortVersionString": "0.2.0",
-            "CFBundleVersion": "2",
+            "CFBundleShortVersionString": "0.3.0",
+            "CFBundleVersion": "3",
             "LSMinimumSystemVersion": "14.0",
             "NSHighResolutionCapable": True,
             "LSApplicationCategoryType": "public.app-category.productivity",
