@@ -8,7 +8,8 @@ from docx import Document
 from PIL import Image, ImageDraw, ImageFont
 
 OUT = Path(__file__).resolve().parent.parent / "samples" / "demo"
-FONT = "/System/Library/Fonts/Supplemental/Arial.ttf"
+FONT = next(f for f in ("/System/Library/Fonts/Supplemental/Arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+            if Path(f).exists())
 
 
 def scan(name, lines, rotate=0.6):

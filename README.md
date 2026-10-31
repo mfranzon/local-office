@@ -78,9 +78,36 @@ backend/app/     FastAPI app: ingest (OCR, chunking), rag, wiki, sources (folder
 skills/          built-in skills (SKILL.md), bundled with the app
 backend/tests/   pytest suite (no models needed)
 frontend/src/    React + Vite + Tailwind UI (views/, components/, i18n.tsx)
-packaging/       llama.cpp build, PyInstaller spec, app signing and DMG
+packaging/       llama.cpp build, PyInstaller spec, app signing and DMG, Linux .deb
 scripts/         sample and demo document generators
 ```
+
+## Linux (Ubuntu 24.04)
+
+There is no Linux package: build it from source. Tested on Ubuntu 24.04 with an NVIDIA RTX 3060 (6 GB).
+
+```bash
+# 1. Build tools, the window's GTK/WebKit, and CUDA (skip nvidia-cuda-toolkit and g++-12 without an NVIDIA GPU)
+sudo apt install git cmake ninja-build build-essential python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 \
+  nvidia-cuda-toolkit g++-12
+curl -LsSf https://astral.sh/uv/install.sh | sh        # uv; Node 22 with npm from https://nodejs.org or nvm
+
+# 2. Build
+git clone https://github.com/mfranzon/local-office.git && cd local-office
+packaging/build_llama.sh                               # llama-server with CUDA if nvcc is found, CPU otherwise
+(cd frontend && npm ci && npm run build)
+cd backend
+uv venv --python /usr/bin/python3.12 --system-site-packages   # sees the system's GTK bindings (python3-gi)
+uv sync
+
+# 3. Run
+uv run python -m app.desktop                           # the app window
+uv run uvicorn app.main:app --port 8000                # or: no window, open http://localhost:8000
+```
+
+The first start downloads the models (about 5 GB). Data and models live in `~/.local/share/local-office/`. When the GPU
+can't hold all three models, OCR and the search index run on the CPU so the assistant keeps the GPU (about 80 tokens/s
+for the 4B model on the RTX 3060). `packaging/build_deb.sh` packs the build into a `.deb` for your own machines.
 
 ## Status
 

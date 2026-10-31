@@ -1,0 +1,53 @@
+name: Release
+
+# Push a tag (v0.3.0) to build the .dmg and attach it to its GitHub release,
+# or run it by hand to rebuild the .dmg of an existing tag. Linux: build from source (README).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build (e.g. v0.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  dmg:
+    runs-on: macos-14   # Apple Silicon; the app targets arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: brew install ninja
+      - run: packaging/build_app.sh   # ad-hoc signed; other Macs need "Open Anyway"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: dist/LocalOffice.dmg
+
+  release:
+    needs: dmg
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dmg
+          path: assets
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Local Office ${TAG#v}" --generate-notes \
+              $([[ "$TAG" == v0.* ]] && echo --prerelease)
+          gh release upload "$TAG" assets/* --clobber
