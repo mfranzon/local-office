@@ -90,7 +90,7 @@ def _xlsx_pages(path: Path) -> Iterator[tuple[None, str]]:
 
 
 def _text_pages(path: Path) -> Iterator[tuple[None, str]]:
-    text = path.read_text(errors="replace")
+    text = path.read_text(encoding="utf-8", errors="replace")
     for i in range(0, max(len(text), 1), 4000):
         yield None, text[i:i + 4000]
 

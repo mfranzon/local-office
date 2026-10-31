@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from .config import LLAMA_SERVER, LOGS_DIR, MODELS_DIR
+from .config import LLAMA_SERVER, LOGS_DIR, MODELS_DIR, NO_WINDOW, WINDOWS
 
 IDLE_SECONDS = 15 * 60
 START_TIMEOUT = 180
@@ -75,7 +75,7 @@ async def download(repo: str, files: list[str]) -> AsyncIterator[int]:
                         yield pct
         if part.stat().st_size != sizes[name]:
             raise RuntimeError(f"incomplete download for {name}, try again")
-        part.rename(dest)
+        part.replace(dest)
     yield 100
 
 
@@ -103,14 +103,16 @@ def _free_port() -> int:
 async def start(key: str, args: list[str], log_name: str) -> Server:
     srv = Server(key, args, port=_free_port())
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log = (LOGS_DIR / f"{log_name}.log").open("w")
-    srv.proc = subprocess.Popen([LLAMA_SERVER, *args, "--host", "127.0.0.1", "--port", str(srv.port)],
-                                stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+    with (LOGS_DIR / f"{log_name}.log").open("w", encoding="utf-8") as log:
+        srv.proc = subprocess.Popen([LLAMA_SERVER, *args, "--host", "127.0.0.1", "--port", str(srv.port)],
+                                    stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, **NO_WINDOW)
+    if WINDOWS:
+        _kill_with_app(srv.proc)
     deadline = time.monotonic() + START_TIMEOUT
     async with httpx.AsyncClient(timeout=2) as client:
         while time.monotonic() < deadline:
             if srv.proc.poll() is not None:
-                tail = (LOGS_DIR / f"{log_name}.log").read_text(errors="replace").strip().splitlines()[-3:]
+                tail = (LOGS_DIR / f"{log_name}.log").read_text(encoding="utf-8", errors="replace").strip().splitlines()[-3:]
                 raise RuntimeError("the model failed to start: " + " | ".join(tail))
             with contextlib.suppress(httpx.HTTPError):
                 if (await client.get(f"http://127.0.0.1:{srv.port}/health")).status_code == 200:
@@ -118,6 +120,37 @@ async def start(key: str, args: list[str], log_name: str) -> Server:
             await asyncio.sleep(0.5)
     stop(srv)
     raise RuntimeError("the model took too long to start")
+
+
+_job = None
+
+
+def _kill_with_app(proc: subprocess.Popen):
+    """Windows doesn't end child processes with their parent. A job object that kills its processes when its last
+    handle closes ends the servers when the app exits, crashes or is killed from Task Manager."""
+    import ctypes
+    from ctypes import wintypes
+    global _job
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    if _job is None:
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                        ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
+                        ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD),
+                        ("SchedulingClass", wintypes.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("Basic", Basic), ("IoInfo", ctypes.c_uint64 * 6), ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        job = kernel32.CreateJobObjectW(None, None)
+        info = Extended()
+        info.Basic.LimitFlags = 0x2000   # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        kernel32.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))  # 9: extended limits
+        _job = job
+    kernel32.AssignProcessToJobObject(wintypes.HANDLE(_job), wintypes.HANDLE(int(proc._handle)))
 
 
 def stop(srv: Server | None):

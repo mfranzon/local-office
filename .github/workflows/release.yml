@@ -1,10 +1,13 @@
 name: Release
 
-# Push a tag (v0.3.0) to build the .dmg and attach it to its GitHub release,
-# or run it by hand to rebuild the .dmg of an existing tag. Linux: build from source (README).
+# Push a tag (v0.3.0) to build the .dmg and the Windows installer and attach them to its GitHub release,
+# or run it by hand to rebuild them for an existing tag. Linux: build from source (README).
+# Pull requests that change the packaging build both without releasing anything.
 on:
   push:
     tags: ["v*"]
+  pull_request:
+    paths: ["packaging/**", ".github/workflows/release.yml"]
   workflow_dispatch:
     inputs:
       tag:
@@ -16,6 +19,7 @@ permissions:
 
 env:
   TAG: ${{ inputs.tag || github.ref_name }}
+  REF: ${{ github.event_name != 'pull_request' && (inputs.tag || github.ref_name) || '' }}   # '': the PR's code
 
 jobs:
   dmg:
@@ -23,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ env.REF }}
       - uses: astral-sh/setup-uv@v6
       - uses: actions/setup-node@v4
         with:
@@ -35,14 +39,35 @@ jobs:
           name: dmg
           path: dist/LocalOffice.dmg
 
+  exe:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+      - run: packaging/build_windows.ps1   # unsigned; SmartScreen asks "Run anyway"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: dist/LocalOffice-Setup.exe
+
   release:
-    needs: dmg
+    if: github.event_name != 'pull_request'
+    needs: [dmg, exe]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dmg
           path: assets
+          merge-multiple: true
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
