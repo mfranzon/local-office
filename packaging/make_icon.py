@@ -1,7 +1,7 @@
 # /// script
 # dependencies = ["pillow"]
 # ///
-"""Draws the app icon (blue rounded square with a document) and writes build/LocalOffice.icns."""
+"""Draws the app icon (blue rounded square with a document): build/LocalOffice.iconset/*.png, plus LocalOffice.icns on a Mac."""
 import subprocess
 import sys
 from pathlib import Path
@@ -23,5 +23,6 @@ for y in (450, 530, 610):
 for size in (16, 32, 128, 256, 512):
     img.resize((size, size), Image.LANCZOS).save(iconset / f"icon_{size}x{size}.png")
     img.resize((size * 2, size * 2), Image.LANCZOS).save(iconset / f"icon_{size}x{size}@2x.png")
-subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(BUILD / "LocalOffice.icns")], check=True)
-print("icon:", BUILD / "LocalOffice.icns")
+if sys.platform == "darwin":
+    subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(BUILD / "LocalOffice.icns")], check=True)
+print("icon:", iconset)

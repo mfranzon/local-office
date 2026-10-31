@@ -72,10 +72,12 @@ uv run scripts/make_demo.py                                       # English demo
 
 Running from source needs a `llama-server` binary: `packaging/build_llama.sh` builds one into `build/bin`, or set `LLAMA_SERVER`. `DATA_DIR` and `MODELS_DIR` override the data and model folders, which is useful to reuse models you've already downloaded.
 
-### Linux (from source)
+### Linux
 
-Tested on Ubuntu 24.04 with an RTX 3060 (6 GB). `packaging/build_llama.sh` builds llama-server with CUDA when `nvcc` is
-installed (CPU otherwise), then run the backend as above and open http://localhost:8000. Data lives in
+Tested on Ubuntu 24.04 with an RTX 3060 (6 GB). `packaging/build_deb.sh` builds `dist/local-office_<version>_amd64.deb`
+(install with `sudo apt install ./dist/local-office_*.deb`, then open Local Office from the app menu). It uses the
+system's Python 3.12, GTK and WebKit; llama-server is built with CUDA when `nvcc` is installed (CPU otherwise). From
+source, run the backend as above and open http://localhost:8000. Data lives in
 `~/.local/share/local-office/`. When the GPU can't hold all three models, OCR and the search index run on the CPU so the
 assistant keeps the GPU (~80 tokens/s for the 4B model on the 3060).
 
