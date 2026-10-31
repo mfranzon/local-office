@@ -65,7 +65,6 @@ ROLE_DEFAULTS = {
     "assistant": dict(context=16384, flags=("--jinja",)),
     "ocr": dict(context=8192, prompt="Convert this document page to markdown. Keep tables as markdown tables."),
     "embed": dict(context=4096, flags=_EMBED_FLAGS),
-    "agent": dict(context=16384, flags=("--jinja",)),
 }
 
 # Curated choices, each tested on this llama.cpp build. Per role, best first: the recommended model is the first that
@@ -80,8 +79,6 @@ CATALOG = [
          query_prefix="Instruct: Given a question, retrieve relevant passages that answer it\nQuery: "),
     Spec("embed", "ggml-org/embeddinggemma-300M-GGUF", "embeddinggemma-300M-Q8_0.gguf", "", "EmbeddingGemma 300M", 330, ("light",),
          context=2048, flags=_EMBED_FLAGS, query_prefix="task: search result | query: ", doc_prefix="title: none | text: "),
-    Spec("agent", "LiquidAI/LFM2.5-1.2B-Instruct-GGUF", "LFM2.5-1.2B-Instruct-Q8_0.gguf", "", "LFM2.5 1.2B", 1250, ("fast",), **ROLE_DEFAULTS["agent"]),
-    Spec("agent", "unsloth/Qwen3.5-2B-GGUF", "Qwen3.5-2B-Q4_K_M.gguf", "", "Qwen3.5 2B", 1300, ("quality",), **ROLE_DEFAULTS["agent"]),
 ]
 
 

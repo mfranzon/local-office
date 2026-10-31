@@ -5,11 +5,12 @@ import socket
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
 import uvicorn
 import webview
 
-from . import runtime
+from . import runtime, sources
 from .config import DATA_DIR, LOGS_DIR
 
 
@@ -39,7 +40,12 @@ def main():
             time.sleep(0.1)
 
     webview.settings["ALLOW_DOWNLOADS"] = True
-    webview.create_window("Local Office", base, width=1360, height=880, min_size=(1000, 680))
+    window = webview.create_window("Local Office", base, width=1360, height=880, min_size=(1000, 680))
+
+    def pick_folder() -> str | None:
+        picked = window.create_file_dialog(webview.FileDialog.FOLDER, directory=str(Path.home()))
+        return picked[0] if picked else None
+    sources.pick_folder = pick_folder
     webview.start(private_mode=False, storage_path=str(DATA_DIR / "webview"))
     server.should_exit = True
     runtime.shutdown()

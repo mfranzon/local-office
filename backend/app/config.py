@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROLES = ("assistant", "ocr", "embed", "agent")
+ROLES = ("assistant", "ocr", "embed")
 REPO = Path(__file__).resolve().parents[2]
 BUNDLE = Path(getattr(sys, "_MEIPASS", REPO))          # PyInstaller unpacks bundled resources here
 
@@ -14,6 +14,7 @@ MODELS_DIR = Path(os.environ.get("MODELS_DIR", DATA_DIR / "models"))
 LOGS_DIR = DATA_DIR / "logs"
 STATIC_DIR = Path(os.environ.get("STATIC_DIR", BUNDLE / "ui" if hasattr(sys, "_MEIPASS") else REPO / "frontend/dist"))
 EMBED_DIM = int(os.environ.get("EMBED_DIM", 1024))
+BUILTIN_SKILLS = BUNDLE / "skills"                      # shipped with the app; user skills live in DATA_DIR/skills
 
 
 def _llama_server() -> str:

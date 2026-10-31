@@ -12,7 +12,22 @@ export interface Doc {
   error: string | null;
   wiki_status: "pending" | "processing" | "done" | "error";
   summary: string;
+  source_id: number | null;
 }
+
+export interface SourceInfo {
+  id: number; name: string; status: "idle" | "syncing" | "error"; error: string | null;
+  last_sync: string | null; doc_count: number;
+  config: { path: string };
+}
+
+export interface SkillInfo {
+  name: string; description: string; instructions: string; builtin: boolean; enabled: boolean;
+  references: string[]; ignored: string[];
+}
+
+export interface Step { tool: string; detail: string }
+export interface ExportFile { name: string; url: string }
 
 export interface Page {
   n: number;
@@ -80,7 +95,7 @@ export interface SetupStatus {
   disk_free_gb: number;
 }
 
-export type Role = "assistant" | "ocr" | "embed" | "agent";
+export type Role = "assistant" | "ocr" | "embed";
 
 export interface ModelSpec {
   role: Role;
@@ -101,10 +116,18 @@ export type StreamEvent =
   | { type: "sources"; sources: Source[] }
   | { type: "token"; text: string }
   | { type: "error"; message: string }
+  | { type: "skill"; name: string }
+  | ({ type: "step" } & Step)
+  | ({ type: "file" } & ExportFile)
   | { type: "done" };
 
 async function json<T>(res: Response): Promise<T> {
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    let detail = body;
+    try { detail = JSON.parse(body).detail ?? body; } catch { /* not JSON */ }
+    throw new Error(typeof detail === "string" ? detail : `${res.status}`);
+  }
   return res.json();
 }
 
@@ -134,6 +157,21 @@ export const api = {
   distinct: (keep_id: number, other_id: number) => post("/api/wiki/review/distinct", { keep_id, other_id }),
   rebuildWiki: () => post("/api/wiki/rebuild", {}),
   exportUrl: (lang: string) => `/api/wiki/export.zip?lang=${lang}`,
+  sources: () => fetch("/api/sources").then(json<{ sources: SourceInfo[]; can_pick_folder: boolean }>),
+  pickFolder: () => post("/api/sources/pick-folder", {}) as Promise<{ path: string | null }>,
+  addFolder: (path: string) => post("/api/sources/folder", { path }),
+  syncSource: (id: number) => post(`/api/sources/${id}/sync`, {}),
+  removeSource: (id: number) => fetch(`/api/sources/${id}`, { method: "DELETE" }).then(json),
+  skills: () => fetch("/api/skills").then(json<SkillInfo[]>),
+  saveSkill: (name: string, description: string, instructions: string) =>
+    fetch(`/api/skills/${name}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ description, instructions }) }).then(json<SkillInfo>),
+  importSkill: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return fetch("/api/skills/import", { method: "POST", body: form }).then(json<SkillInfo>);
+  },
+  toggleSkill: (name: string, enabled: boolean) => post(`/api/skills/${name}/enabled`, { enabled }),
+  deleteSkill: (name: string) => fetch(`/api/skills/${name}`, { method: "DELETE" }).then(json),
   chats: () => fetch("/api/chats").then(json<ChatSummary[]>),
   chat: <T>(id: string) => fetch(`/api/chats/${id}`).then(json<ChatSummary & { turns: T[] }>),
   saveChat: (id: string, title: string, turns: unknown[]) =>

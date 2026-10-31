@@ -19,9 +19,14 @@ def image_part(data: bytes, mime: str = "image/jpeg") -> dict:
 
 
 async def chat(role: str, messages: list[dict], **params) -> str:
+    return (await complete(role, messages, **params))["content"] or ""
+
+
+async def complete(role: str, messages: list[dict], **params) -> dict:
+    """One non-streamed reply as a message dict, including any tool_calls."""
     r = await _http.post(f"{await url(role)}/chat/completions", json={"messages": messages, "temperature": 0, **params})
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"] or ""
+    return r.json()["choices"][0]["message"]
 
 
 async def chat_stream(messages: list[dict], **params) -> AsyncIterator[str]:

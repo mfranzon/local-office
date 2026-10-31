@@ -7,9 +7,12 @@ import asyncio
 import io
 import logging
 import re
+import shutil
+import uuid
 from collections.abc import Iterator
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import BinaryIO
 
 import pypdfium2 as pdfium
 from docx import Document as Docx
@@ -184,6 +187,53 @@ def _store_chunks(doc_id: str, n: int, pieces: list[str], vectors: list[list[flo
         for piece, v in zip(pieces, vectors):
             cid = conn.execute("INSERT INTO chunks(doc_id, page, text) VALUES (?,?,?)", (doc_id, n, piece)).lastrowid
             conn.execute("INSERT INTO vec_chunks(rowid, embedding) VALUES (?,?)", (cid, vec(v)))
+
+
+# --- adding and removing documents (uploads, synced folders) ---
+
+def add(name: str, ext: str, *, data: bytes | None = None, src: Path | BinaryIO | None = None,
+        source_id: int | None = None, source_key: str | None = None, mtime: float | None = None) -> str:
+    """Stores a copy of the file and queues it for reading. Returns the new document id."""
+    doc_id = uuid.uuid4().hex[:12]
+    dest = file_path(doc_id, ext)
+    if isinstance(src, Path):
+        shutil.copyfile(src, dest)
+    elif src is not None:
+        with dest.open("wb") as out:
+            shutil.copyfileobj(src, out)
+    else:
+        dest.write_bytes(data or b"")
+    with db() as conn:
+        conn.execute("""INSERT INTO documents(id, name, ext, size, source_id, source_key, source_mtime)
+                        VALUES (?,?,?,?,?,?,?)""", (doc_id, name, ext, dest.stat().st_size, source_id, source_key, mtime))
+    enqueue(doc_id)
+    return doc_id
+
+
+def replace(doc_id: str, ext: str, src: Path, mtime: float):
+    """A synced file changed: read it again."""
+    shutil.copyfile(src, file_path(doc_id, ext))
+    with db() as conn:
+        conn.execute("UPDATE documents SET size=?, source_mtime=?, status='queued' WHERE id=?",
+                     (file_path(doc_id, ext).stat().st_size, mtime, doc_id))
+    enqueue(doc_id)
+
+
+def remove(conn, doc_ids: list[str]) -> list[int]:
+    """Deletes documents with their files. Returns the wiki entities they cited."""
+    cited = set()
+    for doc_id in doc_ids:
+        doc = conn.execute("SELECT name, ext FROM documents WHERE id=?", (doc_id,)).fetchone()
+        if doc is None:
+            continue
+        cited |= {r[0] for r in conn.execute("SELECT DISTINCT entity_id FROM facts WHERE doc_id=? AND entity_id IS NOT NULL", (doc_id,))}
+        conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))   # its facts go with it (ON DELETE CASCADE)
+        conn.execute("INSERT INTO wiki_log(action, detail) VALUES ('delete', ?)", (doc["name"],))
+        file_path(doc_id, doc["ext"]).unlink(missing_ok=True)
+        shutil.rmtree(PAGES / doc_id, ignore_errors=True)
+    conn.executemany("UPDATE entities SET summary_stale=1 WHERE id=?", [(e,) for e in cited])
+    wiki.cleanup(conn)
+    return sorted(cited)
 
 
 async def process(doc_id: str):

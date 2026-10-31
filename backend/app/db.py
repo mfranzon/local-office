@@ -8,7 +8,7 @@ import sqlite_vec
 
 from .config import DATA_DIR, EMBED_DIM
 
-SCHEMA = f"""
+SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -83,6 +83,17 @@ CREATE INDEX IF NOT EXISTS facts_doc ON facts(doc_id);
 CREATE TABLE IF NOT EXISTS rejected_facts (entity_id INTEGER, key TEXT, norm TEXT, PRIMARY KEY (entity_id, key, norm));
 CREATE TABLE IF NOT EXISTS ignored_names (norm TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS not_duplicates (a INTEGER, b INTEGER, PRIMARY KEY (a, b));
+-- connected sources: local folders, synced into documents
+CREATE TABLE IF NOT EXISTS sources (
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL,                          -- always folder
+  name TEXT NOT NULL,
+  config TEXT NOT NULL,                        -- JSON: {path}
+  status TEXT NOT NULL DEFAULT 'idle',         -- idle | syncing | error
+  error TEXT,
+  last_sync TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS chats (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -102,6 +113,9 @@ MIGRATIONS = [  # columns added after the first release; ALTER fails harmlessly 
     "ALTER TABLE documents ADD COLUMN doc_type TEXT",
     "ALTER TABLE documents ADD COLUMN doc_date TEXT",
     "ALTER TABLE documents ADD COLUMN wiki_status TEXT NOT NULL DEFAULT 'pending'",  # pending|processing|done|error
+    "ALTER TABLE documents ADD COLUMN source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL",
+    "ALTER TABLE documents ADD COLUMN source_key TEXT",     # folder: relative path
+    "ALTER TABLE documents ADD COLUMN source_mtime REAL",
 ]
 VEC_TABLE = "CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(embedding float[{dim}] distance_metric=cosine)"
 

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, FileText, Loader2, Plus, Trash2, X } from "lucide-react";
-import { api, stream, type ChatSummary, type Doc, type Msg, type Source } from "../api";
+import { BookOpen, Check, Download, FileText, Loader2, Plus, Trash2, Wand2, X } from "lucide-react";
+import { api, stream, type ChatSummary, type Doc, type ExportFile, type Msg, type Source, type Step } from "../api";
 import { useI18n } from "../i18n";
 import Composer from "../components/Composer";
 import Markdown from "../components/Markdown";
 
-interface Turn extends Msg { sources?: Source[]; error?: string }
+interface Turn extends Msg { sources?: Source[]; error?: string; skill?: string; steps?: Step[]; files?: ExportFile[] }
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
@@ -16,8 +16,8 @@ function when(ts: string, lang: string) {
     : d.toLocaleDateString(lang, { day: "numeric", month: "short" });
 }
 
-export default function Ask({ docs, scope, setScope, onSource }: {
-  docs: Doc[]; scope: Doc | null; setScope: (d: Doc | null) => void; onSource: (s: Source) => void;
+export default function Ask({ docs, scope, setScope, onSource, seed }: {
+  docs: Doc[]; scope: Doc | null; setScope: (d: Doc | null) => void; onSource: (s: Source) => void; seed?: { text: string };
 }) {
   const { t, d, lang } = useI18n();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -64,6 +64,9 @@ export default function Ask({ docs, scope, setScope, onSource }: {
         if (e.type === "sources") { update((l) => ({ ...l, sources: e.sources })); setPhase("writing"); }
         if (e.type === "token") update((l) => ({ ...l, content: l.content + e.text }));
         if (e.type === "error") update((l) => ({ ...l, error: e.message }));
+        if (e.type === "skill") update((l) => ({ ...l, skill: e.name, steps: [] }));
+        if (e.type === "step") update((l) => ({ ...l, steps: [...(l.steps ?? []), { tool: e.tool, detail: e.detail }] }));
+        if (e.type === "file") update((l) => ({ ...l, files: [...(l.files ?? []), { name: e.name, url: e.url }] }));
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") update((l) => ({ ...l, error: String(err) }));
@@ -143,11 +146,43 @@ export default function Ask({ docs, scope, setScope, onSource }: {
               </div>
             ) : (
               <div key={i} className="text-[15px]">
-                {!turn.content && phase !== "idle" && i === turns.length - 1 && (
+                {turn.skill && (
+                  <div className="mb-3">
+                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-violet-50 text-violet-700 font-medium">
+                      <Wand2 size={13} /> {t("using_skill", { name: turn.skill })}
+                    </span>
+                    {!!turn.steps?.length && (
+                      <ul className="mt-2 space-y-1 text-sm text-slate-500">
+                        {turn.steps.map((st, j) => {
+                          const running = !turn.content && phase !== "idle" && i === turns.length - 1 && j === turn.steps!.length - 1;
+                          const detail = st.tool === "read_document" ? docs.find((x) => x.id === st.detail)?.name ?? st.detail : st.detail;
+                          return (
+                            <li key={j} className="flex items-center gap-2 min-w-0">
+                              {running ? <Loader2 size={13} className="animate-spin text-accent shrink-0" /> : <Check size={13} className="text-emerald-600 shrink-0" />}
+                              <span className="shrink-0">{t(`step_${st.tool}` as never) || st.tool}</span>
+                              {detail && <span className="truncate text-slate-400">{detail}</span>}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                )}
+                {!turn.content && phase !== "idle" && i === turns.length - 1 && !turn.steps?.length && (
                   <div className="flex items-center gap-2 text-slate-500"><Loader2 size={16} className="animate-spin" /> {phase === "searching" ? t("searching") : t("thinking")}</div>
                 )}
                 <Markdown text={turn.content} onCite={turn.sources ? (n) => cite(turn, n) : undefined} />
                 {turn.error && <div className="mt-2 px-3 py-2 rounded-lg bg-red-50 text-red-700 text-sm">{t("error")} {turn.error}</div>}
+                {!!turn.files?.length && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {turn.files.map((f) => (
+                      <a key={f.url} href={f.url} download={f.name}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-medium hover:bg-emerald-100">
+                        <Download size={15} /> {t("download_file")} {f.name}
+                      </a>
+                    ))}
+                  </div>
+                )}
                 {!!turn.sources?.length && turn.content && (
                   <div className="mt-3">
                     <div className="text-xs uppercase tracking-wide text-slate-400 mb-1.5">{t("sources")}</div>
@@ -172,7 +207,7 @@ export default function Ask({ docs, scope, setScope, onSource }: {
 
         <div className="px-6 pb-6 pt-2">
           <div className="max-w-3xl mx-auto">
-            <Composer placeholder={t("ask_placeholder")} busy={phase !== "idle"} onSend={send} onStop={() => abort.current?.abort()} />
+            <Composer placeholder={t("ask_placeholder")} busy={phase !== "idle"} onSend={send} onStop={() => abort.current?.abort()} seed={seed} skills />
           </div>
         </div>
       </div>

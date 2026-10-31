@@ -1,8 +1,8 @@
 import asyncio
 import io
 import json
-import shutil
-import uuid
+import re
+import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from . import ingest, llm, models, rag, runtime, wiki, wiki_views
+from . import agent, ingest, llm, models, rag, runtime, skills, sources, tools, wiki, wiki_views
 from .config import ROLES, STATIC_DIR
 from .db import db, init
 
@@ -24,7 +24,8 @@ async def lifespan(_):
     ingest.FILES.mkdir(parents=True, exist_ok=True)
     ingest.resume_pending()
     wiki.resume_pending()
-    tasks = [asyncio.create_task(ingest.worker()), asyncio.create_task(wiki.worker()), asyncio.create_task(runtime.reaper())]
+    tasks = [asyncio.create_task(ingest.worker()), asyncio.create_task(wiki.worker()), asyncio.create_task(runtime.reaper()),
+             asyncio.create_task(sources.worker())]
     yield
     for t in tasks:
         t.cancel()
@@ -99,15 +100,7 @@ def upload(files: list[UploadFile] = File(...)):
         if ext not in ingest.SUPPORTED:
             rejected.append(f.filename)
             continue
-        doc_id = uuid.uuid4().hex[:12]
-        dest = ingest.file_path(doc_id, ext)
-        with dest.open("wb") as out:
-            shutil.copyfileobj(f.file, out)
-        with db() as conn:
-            conn.execute("INSERT INTO documents(id, name, ext, size) VALUES (?,?,?,?)",
-                         (doc_id, Path(f.filename).name, ext, dest.stat().st_size))
-        ingest.enqueue(doc_id)
-        created.append(doc_id)
+        created.append(ingest.add(Path(f.filename).name, ext, src=f.file))
     return {"created": created, "rejected": rejected}
 
 
@@ -123,15 +116,9 @@ def get_document(doc_id: str):
 @app.delete("/api/documents/{doc_id}")
 async def delete_document(doc_id: str):
     with db() as conn:
-        doc = _doc_or_404(conn, doc_id)
-        cited = [r[0] for r in conn.execute("SELECT DISTINCT entity_id FROM facts WHERE doc_id=? AND entity_id IS NOT NULL", (doc_id,))]
-        conn.execute("DELETE FROM documents WHERE id=?", (doc_id,))   # its facts go with it (ON DELETE CASCADE)
-        conn.executemany("UPDATE entities SET summary_stale=1 WHERE id=?", [(e,) for e in cited])
-        conn.execute("INSERT INTO wiki_log(action, detail) VALUES ('delete', ?)", (doc["name"],))
-        wiki.cleanup(conn)
+        _doc_or_404(conn, doc_id)
+        cited = ingest.remove(conn, [doc_id])
     asyncio.create_task(wiki.refresh_summaries(cited))
-    ingest.file_path(doc_id, doc["ext"]).unlink(missing_ok=True)
-    shutil.rmtree(ingest.PAGES / doc_id, ignore_errors=True)
     return {"ok": True}
 
 
@@ -159,6 +146,52 @@ def original_file(doc_id: str):
     return FileResponse(ingest.file_path(doc_id, doc["ext"]), filename=doc["name"])
 
 
+# --- connected folders (read-only) ---
+
+class FolderSource(BaseModel):
+    path: str
+
+
+@app.get("/api/sources")
+def list_sources():
+    return {"sources": sources.listing(), "can_pick_folder": sources.pick_folder is not None}
+
+
+@app.post("/api/sources/pick-folder")
+def pick_folder():
+    if sources.pick_folder is None:
+        raise HTTPException(501, "folder picker is only available in the app")
+    return {"path": sources.pick_folder()}
+
+
+@app.post("/api/sources/folder")
+async def add_folder(req: FolderSource):
+    path = Path(req.path).expanduser()
+    if not path.is_dir():
+        raise HTTPException(400, "folder not found")
+    with db() as conn:
+        for r in conn.execute("SELECT config FROM sources"):
+            other = Path(json.loads(r[0])["path"])
+            if path == other or other in path.parents or path in other.parents:
+                raise HTTPException(400, f"overlaps a folder that is already connected: {other}")
+    source_id = sources.create(path.name, {"path": str(path)})
+    asyncio.create_task(sources.sync(source_id))
+    return {"id": source_id}
+
+
+@app.post("/api/sources/{source_id}/sync")
+async def sync_source(source_id: int):
+    asyncio.create_task(sources.sync(source_id))
+    return {"ok": True}
+
+
+@app.delete("/api/sources/{source_id}")
+async def delete_source(source_id: int):
+    cited = sources.delete(source_id)
+    asyncio.create_task(wiki.refresh_summaries(cited))
+    return {"ok": True}
+
+
 # --- chat over documents ---
 
 class ChatRequest(BaseModel):
@@ -167,9 +200,26 @@ class ChatRequest(BaseModel):
     doc_ids: list[str] | None = None
 
 
+async def _pick_skill(req: ChatRequest) -> skills.Skill | None:
+    """'/name request' runs that skill; otherwise the assistant may route the message to an enabled skill."""
+    last = req.messages[-1]
+    if last["role"] == "user" and (m := re.match(r"/([a-z0-9-]+)\s*(.*)", last["content"], re.S)):
+        skill = skills.get(m[1])
+        if skill and skill.enabled:
+            last["content"] = m[2].strip() or skill.description
+            return skill
+    if req.use_docs and not req.doc_ids:
+        return await agent.route(last["content"], skills.enabled())
+    return None
+
+
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
     async def events():
+        if skill := await _pick_skill(req):
+            async for e in agent.run(skill, req.messages):
+                yield e
+            return
         hits = None
         if req.use_docs:
             question = next(m["content"] for m in reversed(req.messages) if m["role"] == "user")
@@ -182,6 +232,59 @@ async def chat(req: ChatRequest):
         async for token in llm.chat_stream(rag.build_messages(req.messages, hits)):
             yield {"type": "token", "text": token}
     return sse(events())
+
+
+# --- skills ---
+
+class SkillSave(BaseModel):
+    description: str
+    instructions: str
+
+
+class SkillToggle(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/skills")
+def list_skills():
+    return [s.view() for s in skills.all_skills()]
+
+
+@app.put("/api/skills/{name}")
+def save_skill(name: str, body: SkillSave):
+    try:
+        return skills.save(name, body.description, body.instructions).view()
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/skills/import")
+def import_skill(file: UploadFile = File(...)):
+    try:
+        return skills.import_file(file.filename or "SKILL.md", file.file.read()).view()
+    except (ValueError, zipfile.BadZipFile, UnicodeDecodeError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/skills/{name}/enabled")
+def toggle_skill(name: str, body: SkillToggle):
+    skills.set_enabled(name, body.enabled)
+    return {"ok": True}
+
+
+@app.delete("/api/skills/{name}")
+def delete_skill(name: str):
+    if not skills.delete(name):
+        raise HTTPException(400, "only skills you added can be deleted")
+    return {"ok": True}
+
+
+@app.get("/api/exports/{run_id}/{filename}")
+def download_export(run_id: str, filename: str):
+    path = (tools.EXPORTS / run_id / filename).resolve()
+    if tools.EXPORTS.resolve() not in path.parents or not path.is_file():
+        raise HTTPException(404, "file not found")
+    return FileResponse(path, filename=filename)
 
 
 # --- saved conversations ---

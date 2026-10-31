@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, FileText, Image as ImageIcon, MessageSquare, Settings as SettingsIcon, ShieldCheck } from "lucide-react";
+import { BookOpen, FileText, Image as ImageIcon, MessageSquare, Settings as SettingsIcon, ShieldCheck, Wand2 } from "lucide-react";
 import { api, type Doc, type Source } from "./api";
 import { useI18n } from "./i18n";
 import DocViewer from "./components/DocViewer";
@@ -9,8 +9,9 @@ import Images from "./views/Images";
 import Settings from "./views/Settings";
 import Wiki from "./views/Wiki";
 import Setup from "./views/Setup";
+import Skills from "./views/Skills";
 
-type View = "ask" | "docs" | "wiki" | "images" | "settings";
+type View = "ask" | "docs" | "wiki" | "images" | "skills" | "settings";
 export interface ViewerTarget { id: string; page: number }
 
 function useDocuments() {
@@ -50,6 +51,7 @@ function Shell() {
   const [scope, setScope] = useState<Doc | null>(null);
   const [viewer, setViewer] = useState<ViewerTarget | null>(null);
   const [wikiEntity, setWikiEntity] = useState<number | null>(null);
+  const [seed, setSeed] = useState<{ text: string } | undefined>();
   const { docs, refresh } = useDocuments();
   const models = useModelStatus();
 
@@ -69,6 +71,7 @@ function Shell() {
     ["docs", t("nav_docs"), FileText],
     ["wiki", t("nav_wiki"), BookOpen],
     ["images", t("nav_images"), ImageIcon],
+    ["skills", t("nav_skills"), Wand2],
   ];
   const allUp = models && Object.values(models).every((m) => m !== "missing");
   const someUp = models && Object.values(models).some((m) => m !== "missing");
@@ -113,9 +116,10 @@ function Shell() {
       <main className="flex-1 min-w-0 overflow-hidden">
         {view === "docs" && <Documents docs={docs} refresh={refresh} onOpen={(id) => setViewer({ id, page: 1 })} onAsk={askAbout} />}
         {/* always mounted: the conversation (and an answer still being written) survives switching views */}
-        <div className={view === "ask" ? "h-full" : "hidden"}><Ask docs={docs} scope={scope} setScope={setScope} onSource={openSource} /></div>
+        <div className={view === "ask" ? "h-full" : "hidden"}><Ask docs={docs} scope={scope} setScope={setScope} onSource={openSource} seed={seed} /></div>
         {view === "wiki" && <Wiki entityId={wikiEntity} setEntityId={setWikiEntity} onOpenDoc={(id, page) => setViewer({ id, page })} />}
         {view === "images" && <Images refreshDocs={refresh} />}
+        {view === "skills" && <Skills onTry={(name) => { setSeed({ text: `/${name} ` }); setView("ask"); }} />}
         {view === "settings" && <Settings />}
       </main>
 

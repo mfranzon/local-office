@@ -332,6 +332,9 @@ async def worker():
         try:
             await ingest(doc_id)
         except Exception as e:
+            with db() as conn:
+                if conn.execute("SELECT 1 FROM documents WHERE id=?", (doc_id,)).fetchone() is None:
+                    continue   # deleted while it was being read (e.g. removed from a synced folder): nothing to do
             log.exception("wiki ingest failed for %s", doc_id)
             with db() as conn:
                 conn.execute("UPDATE documents SET wiki_status='error' WHERE id=?", (doc_id,))

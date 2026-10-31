@@ -7,20 +7,22 @@ Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photo
 ## Features
 
 - **Documents:** drag & drop PDFs, scans, photos (JPG, PNG, HEIC), TIFF, Word, Excel and text. Digital PDFs use their text layer; scans and photos go through OCR. Tables are kept.
+- **Folders:** connect local or shared folders; they stay in sync, strictly read-only.
+- **Skills:** folders with a `SKILL.md` ([Agent Skills format](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)) that teach the assistant an office task: deadline reports, invoice tables, Word reports. Ask normally and the right skill is picked, or type `/` to choose one. Skills read documents and the wiki and can create Word, Excel or Markdown files; they never send email, delete anything or run scripts. Create your own in the app or import a `SKILL.md` / `.zip`.
 - **Ask:** answers cite the page they come from; click a citation to open the page. Conversations are saved and can be reopened.
 - **Wiki:** pages for organizations, people and projects, built from the documents. Every fact links to its source page. Conflicting values (e.g. two VAT numbers) and likely duplicates go to a review list. Exports to Obsidian.
 - **Images:** describe photos, read charts, extract tables.
 - **Models for your Mac:** the app picks the best models for the Mac's memory. You can switch any of them in Settings, including any GGUF model from Hugging Face. Each model is tested before it's switched on.
 - **Italian and English** interface.
 
-| Documents | Wiki | Settings |
+| A skill at work | Skills | Wiki |
 |---|---|---|
-| ![Documents](docs/screenshots/documents.png) | ![Wiki](docs/screenshots/wiki.png) | ![Settings](docs/screenshots/settings.png) |
+| ![Invoice table skill](docs/screenshots/skill-run.png) | ![Skills](docs/screenshots/skills.png) | ![Wiki](docs/screenshots/wiki.png) |
 
 ## Install
 
 1. Download **LocalOffice.dmg** from [Releases](https://github.com/mfranzon/local-office/releases), open it and drag **Local Office** into Applications.
-2. Open it. The first time, it downloads the AI models chosen for your Mac (6–10 GB, once). After that it works offline.
+2. Open it. The first time, it downloads the AI models chosen for your Mac (5–8.5 GB, once). After that it works offline.
 
 Requirements: Apple Silicon Mac, macOS 14+, 16 GB of memory (24 GB for the best assistant model).
 
@@ -37,14 +39,14 @@ Local Office.app
 
 | Role | 24 GB+ | 16 GB | Memory in use (measured on an M5) |
 |---|---|---|---|
-| Answers, chat, images | Qwen3.5 9B | Qwen3.5 4B | 7.5 GB / 4.9 GB |
+| Answers, chat, images, skills | Qwen3.5 9B | Qwen3.5 4B | 7.5 GB / 4.9 GB |
 | OCR of scanned pages | LightOnOCR-2 1B | LightOnOCR-2 1B | ~2.5 GB |
 | Search index | Qwen3-Embedding 0.6B | Qwen3-Embedding 0.6B | ~1.2 GB |
-| Agents and tool routing | LFM2.5 1.2B | LFM2.5 1.2B | ~1.3 GB |
 
 - **Data:** the database, files, models and logs live in `~/Library/Application Support/Local Office/`.
 - **Search:** pages are split into chunks and embedded. Vector search (sqlite-vec) and keyword search (FTS5) are combined.
 - **Wiki:** the assistant extracts facts into a fixed JSON schema. Code then checks every fact against the source text (names, identifiers and dates must appear in it), resolves entities by name and VAT/tax code, and merges them.
+- **Skills:** the assistant first picks a skill from names and descriptions only (18/18 correct on an English and Italian test set, 0.5–0.8 s), then follows the skill's instructions with tool calls (search, list and read documents, wiki pages, deadlines, create file). Answers cite their sources.
 - **Models:** files are downloaded from Hugging Face with resume. A model switch runs download → start → test → swap, and the current model stays if any step fails.
 
 ## Build
@@ -71,7 +73,9 @@ uv run scripts/make_demo.py                                       # English demo
 Running from source needs a `llama-server` binary: `packaging/build_llama.sh` builds one into `build/bin`, or set `LLAMA_SERVER`. `DATA_DIR` and `MODELS_DIR` override the data and model folders, which is useful to reuse models you've already downloaded.
 
 ```
-backend/app/     FastAPI app: ingest (OCR, chunking), rag, wiki, models + runtime (llama-server supervisor), desktop entry point
+backend/app/     FastAPI app: ingest (OCR, chunking), rag, wiki, sources (folders), skills + agent + tools,
+                 models + runtime (llama-server supervisor), desktop entry point
+skills/          built-in skills (SKILL.md), bundled with the app
 backend/tests/   pytest suite (no models needed)
 frontend/src/    React + Vite + Tailwind UI (views/, components/, i18n.tsx)
 packaging/       llama.cpp build, PyInstaller spec, app signing and DMG
@@ -84,4 +88,4 @@ Early stage, tested on Apple M5 with 24 GB. Small local models make mistakes: an
 
 ## License
 
-[MIT](LICENSE). The AI models are downloaded from Hugging Face at first run and keep their own licenses (Qwen3.5, Qwen3-Embedding and LightOnOCR-2: Apache 2.0; LFM2.5: LFM Open License; EmbeddingGemma: Gemma Terms of Use).
+[MIT](LICENSE). The AI models are downloaded from Hugging Face at first run and keep their own licenses (Qwen3.5, Qwen3-Embedding and LightOnOCR-2: Apache 2.0; EmbeddingGemma: Gemma Terms of Use).

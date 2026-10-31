@@ -13,4 +13,4 @@ from app import models
 def test_recommended_model_fits_the_mac(ram, assistant, embed):
     assert models.recommended("assistant", ram).name == assistant
     assert models.recommended("embed", ram).name == embed
-    assert {models.recommended(r, ram).role for r in ("ocr", "agent")} == {"ocr", "agent"}
+    assert models.recommended("ocr", ram).role == "ocr"

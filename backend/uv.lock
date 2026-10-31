@@ -306,6 +306,7 @@ dependencies = [
     { name = "python-docx" },
     { name = "python-multipart" },
     { name = "pywebview" },
+    { name = "pyyaml" },
     { name = "sqlite-vec" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -327,6 +328,7 @@ requires-dist = [
     { name = "python-docx", specifier = ">=1.1" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "pywebview", specifier = ">=6.2" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "sqlite-vec", specifier = ">=0.1.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]

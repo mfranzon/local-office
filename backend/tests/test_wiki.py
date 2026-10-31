@@ -147,3 +147,26 @@ def test_departments_and_stale_pages_are_not_linked(conn):
     wiki.cleanup(conn)
     assert [r[0] for r in conn.execute("SELECT name FROM entities")] == ["Mario Rossi"]
     assert conn.execute("SELECT COUNT(*) FROM facts WHERE kind='event'").fetchone()[0] == 1
+
+
+def test_document_deleted_during_wiki_ingest_is_skipped_quietly(tmp_path, monkeypatch):
+    import asyncio
+    monkeypatch.setattr(dbmod, "DATA_DIR", tmp_path)
+    dbmod.init()
+    with dbmod.db() as c:
+        c.execute("INSERT INTO documents(id, name, ext, size, status) VALUES ('d9','gone.pdf','.pdf',1,'ready')")
+
+    async def deleted_meanwhile(doc_id):
+        with dbmod.db() as c:
+            c.execute("DELETE FROM documents WHERE id=?", (doc_id,))
+        raise dbmod.sqlite3.IntegrityError("FOREIGN KEY constraint failed")
+    monkeypatch.setattr(wiki, "ingest", deleted_meanwhile)
+
+    async def run_once():
+        wiki._queue.put_nowait("d9")
+        task = asyncio.create_task(wiki.worker())
+        await asyncio.sleep(0.05)
+        task.cancel()
+    asyncio.run(run_once())
+    with dbmod.db() as c:
+        assert c.execute("SELECT COUNT(*) FROM wiki_log WHERE action='error'").fetchone()[0] == 0

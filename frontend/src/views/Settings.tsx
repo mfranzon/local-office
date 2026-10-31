@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Bot, CheckCircle2, Cpu, Download, Loader2, ScanText, Search, Sparkles } from "lucide-react";
+import { AlertCircle, CheckCircle2, Cpu, Download, Loader2, ScanText, Search, Sparkles } from "lucide-react";
 import { api, stream, type ModelSettings, type ModelSpec, type Role } from "../api";
 import { useI18n } from "../i18n";
 
-const ROLES = ["assistant", "ocr", "embed", "agent"] as const;
-const ROLE_ICONS = { assistant: Cpu, ocr: ScanText, embed: Search, agent: Bot } as const;
+const ROLES = ["assistant", "ocr", "embed"] as const;
+const ROLE_ICONS = { assistant: Cpu, ocr: ScanText, embed: Search } as const;
 const STEPS = ["pull", "configure", "test", "reindex"] as const;
 type Step = (typeof STEPS)[number];
 

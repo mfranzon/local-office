@@ -4,7 +4,8 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs, collect_submodules
 
 ROOT = Path(SPECPATH).parent
-datas = [(str(ROOT / "frontend/dist"), "ui")] + collect_data_files("docx") + collect_data_files("pypdfium2_raw")
+datas = [(str(ROOT / "frontend/dist"), "ui"), (str(ROOT / "skills"), "skills")] + collect_data_files("docx") \
+    + collect_data_files("pypdfium2_raw")
 binaries = [(str(ROOT / "build/bin/llama-server"), "bin")]
 binaries += collect_dynamic_libs("sqlite_vec") + collect_dynamic_libs("pypdfium2_raw") + collect_dynamic_libs("pillow_heif")
 hiddenimports = collect_submodules("uvicorn") + ["app.main"]
@@ -28,5 +29,7 @@ app = BUNDLE(
         "NSDocumentsFolderUsageDescription": "Local Office reads documents you choose so you can search and ask about them.",
         "NSDesktopFolderUsageDescription": "Local Office reads documents you choose so you can search and ask about them.",
         "NSDownloadsFolderUsageDescription": "Local Office reads documents you choose so you can search and ask about them.",
+        "NSNetworkVolumesUsageDescription": "Local Office reads documents in shared folders you connect so you can search and ask about them.",
+        "NSRemovableVolumesUsageDescription": "Local Office reads documents on drives you connect so you can search and ask about them.",
     },
 )

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FileSpreadsheet, FileText, Loader2, MessageSquare, RotateCcw, Search, Trash2, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileSpreadsheet, FileText, FolderOpen, Loader2, MessageSquare, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import { api, type Doc } from "../api";
 import { useI18n } from "../i18n";
+import Sources from "../components/Sources";
 
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.heic,.heif,.tif,.tiff,.webp,.bmp,.docx,.xlsx,.txt,.md,.csv";
 
@@ -89,7 +90,7 @@ export default function Documents({ docs, refresh, onOpen, onAsk }: {
     await api.remove(doc.id); refresh();
   };
   const shown = docs.filter((d) => d.name.toLowerCase().includes(filter.toLowerCase()));
-  const fmtDate = (s: string) => new Date(s.replace(" ", "T") + "Z").toLocaleDateString(lang, { day: "numeric", month: "short", year: "numeric" });
+  const fmtDate = (s: string) => new Date(s.includes("T") ? s : s.replace(" ", "T") + "Z").toLocaleDateString(lang, { day: "numeric", month: "short", year: "numeric" });
 
   return (
     <div className="h-full overflow-auto">
@@ -111,12 +112,16 @@ export default function Documents({ docs, refresh, onOpen, onAsk }: {
 
         {notice && <div className="mt-4 px-4 py-2.5 rounded-lg bg-amber-50 text-amber-800 text-sm">{t("rejected")} {notice}</div>}
 
+        <Sources onChange={refresh} />
+
         {docs.length > 0 && (
           <div className="mt-8">
-            <div className="relative mb-3 w-72">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("filter")}
-                className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-accent" />
+            <div className="flex items-center gap-3 mb-3">
+              <div className="relative w-72">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("filter")}
+                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-accent" />
+              </div>
             </div>
             <ul className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
               {shown.map((doc) => (
@@ -125,8 +130,9 @@ export default function Documents({ docs, refresh, onOpen, onAsk }: {
                     <Thumb doc={doc} />
                     <div className="min-w-0">
                       <div className="font-medium truncate group-hover:text-accent">{doc.name}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        {fmtDate(doc.created_at)}
+                      <div className="text-xs text-slate-500 mt-0.5 flex items-center gap-1 min-w-0">
+                        {doc.source_id !== null && <FolderOpen size={12} className="shrink-0" />}
+                        <span className="shrink-0">{fmtDate(doc.created_at)}</span>
                         {doc.pages_total > 0 && <> · {doc.pages_total === 1 ? t("page_one") : t("pages", { n: doc.pages_total })}</>}
                         {doc.status === "ready" && (doc.wiki_status === "pending" || doc.wiki_status === "processing") && (
                           <span className="ml-2 inline-flex items-center gap-1 text-violet-600"><Loader2 size={11} className="animate-spin" /> {t("wiki_updating")}</span>
