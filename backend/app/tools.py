@@ -191,7 +191,7 @@ def create_file(run: Run, filename: str, format: str, content: str | None = None
     elif format == "docx":
         markdown_to_docx(content, path)
     else:
-        path.write_text(content)
+        path.write_text(content, encoding="utf-8")
     run.files.append({"name": name, "url": f"/api/exports/{run.id}/{name}"})
     return (f"Created {name}. A download button appears under your answer automatically: do not write a link to it. "
             "Still give the full answer in the chat (e.g. the table), as the skill asks.")

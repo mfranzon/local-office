@@ -466,9 +466,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <Ctx.Provider value={{ lang, setLang, d: lang === "it" ? it : en }}>{children}</Ctx.Provider>;
 }
 
+// The texts are written for the Mac; on Windows and Linux they say "this computer" and Ctrl+V.
+const MAC = /Mac/.test(navigator.userAgent);
+const forPlatform = (s: string) =>
+  MAC ? s : s.replaceAll("⌘V", "Ctrl+V").replace(/\b(questo|Questo|this|This|un|a) Mac\b/g, "$1 computer");
+
 export function useI18n() {
   const { lang, setLang, d } = useContext(Ctx);
   const t = (key: Key, vars: Record<string, string | number> = {}) =>
-    Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, String(v)), d[key] as string);
+    Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(`{${k}}`, String(v)), forPlatform(d[key] as string));
   return { lang, setLang, t, d };
 }
