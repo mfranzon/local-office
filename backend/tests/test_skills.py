@@ -35,7 +35,7 @@ def test_builtin_skills_are_valid():
     names = sorted(p.parent.name for p in config.BUILTIN_SKILLS.glob("*/SKILL.md"))
     assert names == ["deadlines-report", "document-report", "invoice-table"]
     for p in config.BUILTIN_SKILLS.glob("*/SKILL.md"):
-        meta, body = skills.parse(p.read_text())
+        meta, body = skills.parse(p.read_text(encoding="utf-8"))
         assert meta["name"] == p.parent.name and body
 
 

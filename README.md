@@ -78,7 +78,7 @@ backend/app/     FastAPI app: ingest (OCR, chunking), rag, wiki, sources (folder
 skills/          built-in skills (SKILL.md), bundled with the app
 backend/tests/   pytest suite (no models needed)
 frontend/src/    React + Vite + Tailwind UI (views/, components/, i18n.tsx)
-packaging/       llama.cpp build, PyInstaller spec, app signing and DMG, Linux .deb
+packaging/       llama.cpp build, PyInstaller spec, app signing and DMG, Linux .deb, Windows installer
 scripts/         sample and demo document generators
 ```
 
@@ -108,6 +108,22 @@ uv run uvicorn app.main:app --port 8000                # or: no window, open htt
 The first start downloads the models (about 5 GB). Data and models live in `~/.local/share/local-office/`. When the GPU
 can't hold all three models, OCR and the search index run on the CPU so the assistant keeps the GPU (about 80 tokens/s
 for the 4B model on the RTX 3060). `packaging/build_deb.sh` packs the build into a `.deb` for your own machines.
+
+## Windows (10/11, x64)
+
+**LocalOffice-Setup.exe** on [Releases](https://github.com/mfranzon/local-office/releases) installs the app for the
+current user (no administrator rights needed). It isn't code-signed yet, so SmartScreen shows *Windows protected your
+PC*: *More info* → *Run anyway*. Data and models live in `%LOCALAPPDATA%\Local Office\`.
+
+llama-server is llama.cpp's official Windows build with CUDA 12.4: it uses an NVIDIA GPU (driver only, no CUDA toolkit
+needed) and falls back to the CPU without one. The window uses WebView2, which ships with Windows 11 and current
+Windows 10.
+
+Build the installer on Windows with uv, Node 22 and [Inno Setup 6](https://jrsoftware.org/isinfo.php):
+
+```powershell
+packaging\build_windows.ps1    # -> dist\LocalOffice-Setup.exe; LLAMA_WIN_BACKEND=vulkan or cpu for a smaller build
+```
 
 ## Status
 

@@ -49,7 +49,7 @@ class Skill:
         path = (self.path / rel).resolve()
         if self.path.resolve() not in path.parents or path.suffix.lower() not in (".md", ".txt") or not path.is_file():
             return f"No file {rel} in this skill."
-        return path.read_text(errors="replace")[:20000]
+        return path.read_text(encoding="utf-8", errors="replace")[:20000]
 
 
 def parse(text: str) -> tuple[dict, str]:
@@ -69,7 +69,7 @@ def parse(text: str) -> tuple[dict, str]:
 
 def _load(folder: Path, builtin: bool, disabled: set[str]) -> Skill | None:
     try:
-        meta, body = parse((folder / "SKILL.md").read_text())
+        meta, body = parse((folder / "SKILL.md").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return Skill(meta["name"], meta["description"], body, folder, builtin, meta["name"] not in disabled)
@@ -108,7 +108,7 @@ def save(name: str, description: str, instructions: str) -> Skill:
     parse(content)   # validates
     folder = USER_SKILLS / name
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "SKILL.md").write_text(content)
+    (folder / "SKILL.md").write_text(content, encoding="utf-8")
     return get(name)
 
 
