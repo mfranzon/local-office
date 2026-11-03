@@ -16,7 +16,7 @@ with httpx.Client(base_url="http://127.0.0.1:8765", timeout=300) as client:
             print(json.dumps(event, ensure_ascii=True), flush=True)
             assert event["type"] != "error", event
             output.append(event)
-    files = [e for e in output if e["type"] == "file"]
+    files = [e for e in output if e["type"] == "file" and e["name"].lower().endswith(".xlsx")]
     assert files, "No workbook was created"
     for file in files:
         data = client.get(file["url"])

@@ -71,7 +71,7 @@ async def run(skill: Skill, history: list[dict]) -> AsyncIterator[dict]:
     run_state = tools.Run()
     refs = f"\nThe skill has reference files you can read with read_skill_file: {', '.join(skill.references)}." if skill.references else ""
     request = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")[:300]
-    wants_file = bool(re.search(r"\b(excel|xlsx|word|docx|file|export|esporta)\b", request, re.I))
+    wants_file = SNAPDRAGON and bool(re.search(r"\b(excel|xlsx|word|docx|file|export|esporta)\b", request, re.I))
     messages = [{"role": "system", "content": SYSTEM.format(name=skill.name, today=date.today().isoformat(),
                                                             instructions=skill.instructions, references=refs, request=request)},
                 *history[-8:]]
@@ -122,7 +122,8 @@ async def run(skill: Skill, history: list[dict]) -> AsyncIterator[dict]:
                 result = skill.read_reference(str(args.get("path", "")))
             else:
                 result = await tools.call(run_state, name, args)
-            if name in ("search_documents", "list_deadlines") or result == "No documents match.":
+            if SNAPDRAGON and not result.startswith("Error:") and (name in ("search_documents", "list_deadlines")
+                    or (name == "list_documents" and result == "No documents match.")):
                 sources_checked = True
             sources_checked = sources_checked or bool(run_state.sources)
             messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})

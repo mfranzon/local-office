@@ -108,6 +108,36 @@ def test_legacy_wiki_windowing_is_preserved(monkeypatch):
     assert wiki._windows(pages) == ["=== Page 1 ===\n" + "a" * 9000 + "\n\n", "=== Page 2 ===\nnext page\n\n"]
 
 
+@pytest.mark.parametrize("mode", ["vision", "ocr", "table"])
+def test_mac_image_actions_keep_original_assistant_stream(monkeypatch, mode):
+    import io
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from app import main, rag
+
+    monkeypatch.setattr(main, "SNAPDRAGON", False)
+    seen = []
+
+    async def stream(messages, **kwargs):
+        seen.append(messages)
+        yield "Image answer"
+
+    async def unexpected_ocr(*args, **kwargs):
+        pytest.fail("The Mac image route must keep using the assistant")
+
+    monkeypatch.setattr(llm, "chat_stream", stream)
+    monkeypatch.setattr(llm, "chat", unexpected_ocr)
+    image = io.BytesIO()
+    Image.new("RGB", (32, 32), "white").save(image, "PNG")
+    client = TestClient(main.app)  # No lifespan: this test does not load models.
+    response = client.post("/api/vision", files={"image": ("page.png", image.getvalue(), "image/png")},
+        data={"mode": mode, "messages": json.dumps([{"role": "user", "content": "Read this image"}])})
+    assert response.status_code == 200 and "Image answer" in response.text
+    assert seen[0][0] == {"role": "system", "content": rag.SYSTEM_PLAIN}
+    assert seen[0][1]["content"][0]["type"] == "image_url"
+    assert seen[0][1]["content"][1]["text"] == "Read this image"
+
+
 def test_llama_http_completion_streaming_images_and_embeddings(monkeypatch):
     monkeypatch.setattr(llm, "SNAPDRAGON", False)
     embed_spec = next(s for s in models.LLAMA_CATALOG if s.role == "embed")

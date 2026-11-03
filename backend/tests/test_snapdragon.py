@@ -37,6 +37,7 @@ def test_tool_calls_preserve_arguments_and_reject_unoffered_functions():
 
 
 def test_arm_vector_search_ranks_cosine_and_filters_document_scope(tmp_path, monkeypatch):
+    pytest.importorskip("numpy", reason="The ARM64 fallback dependency is not required by the Mac app")
     monkeypatch.setattr(storage, "sqlite_vec", None)
     monkeypatch.setattr(storage, "VEC_TABLE", "CREATE TABLE IF NOT EXISTS vec_chunks (rowid INTEGER PRIMARY KEY, embedding BLOB NOT NULL)")
     monkeypatch.setattr(storage, "DATA_DIR", tmp_path)

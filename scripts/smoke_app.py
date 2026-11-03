@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 
 import httpx
+from openpyxl import load_workbook
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -64,12 +65,14 @@ def run(base, existing_doc=None):
         with client.stream("POST", "/api/chat", json={"messages": [{"role": "user", "content": "/invoice-table Create an Excel table of the uploaded invoices."}],
                                                      "use_docs": True}) as response:
             skill = list(events(response))
-        files = [e for e in skill if e["type"] == "file"]
-        assert files, "The invoice skill did not produce a file"
+        files = [e for e in skill if e["type"] == "file" and e["name"].lower().endswith(".xlsx")]
+        assert files, "The invoice skill did not produce an XLSX workbook"
         for file in files:
             downloaded = client.get(file["url"])
             downloaded.raise_for_status()
             assert len(downloaded.content) > 100
+            rows = list(load_workbook(io.BytesIO(downloaded.content), data_only=True).active.values)
+            assert "LO-47815" in str(rows) and "3000" in str(rows), rows
         for _ in range(90):
             doc = client.get(f"/api/documents/{doc_id}").json()
             if doc["wiki_status"] in ("done", "error"):

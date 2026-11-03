@@ -82,6 +82,8 @@ The model-check script selects the Snapdragon backend and defaults `MODELS_DIR`
 to this checkout's `models` directory.
 Image understanding remains probabilistic: use the OCR/document workflow for
 exact transcription and verify cited source pages for important facts.
+Length-limited OCR is reported as an error rather than storing a partial page;
+split a dense page into smaller images and retry if it exceeds the model context.
 
 ## Scope of the optional platform addition
 

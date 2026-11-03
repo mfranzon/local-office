@@ -498,14 +498,17 @@ async def vision(image: UploadFile = File(...), messages: str = Form(...), mode:
         jpeg = await asyncio.to_thread(_to_jpeg, await image.read())
     except Exception:
         raise HTTPException(400, "unsupported image")
-    try:
+    if SNAPDRAGON:
+        try:
+            history = json.loads(messages)
+            if not isinstance(history, list) or not history or any(m.get("role") not in ("user", "assistant") or not isinstance(m.get("content"), str) for m in history):
+                raise ValueError()
+        except (ValueError, TypeError, AttributeError):
+            raise HTTPException(400, "invalid conversation")
+        if mode not in ("vision", "ocr", "table"):
+            raise HTTPException(400, "unknown image task")
+    else:
         history = json.loads(messages)
-        if not isinstance(history, list) or not history or any(m.get("role") not in ("user", "assistant") or not isinstance(m.get("content"), str) for m in history):
-            raise ValueError()
-    except (ValueError, TypeError, AttributeError):
-        raise HTTPException(400, "invalid conversation")
-    if mode not in ("vision", "ocr", "table"):
-        raise HTTPException(400, "unknown image task")
     plain_history = list(history)
     first = history[0]
     history[0] = {"role": "user", "content": [llm.image_part(jpeg), {"type": "text", "text": first["content"]}]}
@@ -513,7 +516,7 @@ async def vision(image: UploadFile = File(...), messages: str = Form(...), mode:
     async def events():
         if SNAPDRAGON and mode in ("ocr", "table"):
             text = ingest.html_tables_to_markdown(await llm.chat("ocr", [{"role": "user", "content": [
-                llm.image_part(jpeg), {"type": "text", "text": models.active("ocr").prompt}]}], max_tokens=2048))
+                llm.image_part(jpeg), {"type": "text", "text": models.active("ocr").prompt}]}], max_tokens=4096))
             if mode == "ocr":
                 yield {"type": "token", "text": text}
                 return

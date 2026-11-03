@@ -141,10 +141,13 @@ async def complete(spec, messages, **params):
 
 
 async def embed(spec, texts, query=False):
+    vectors = None
     async for event in events(spec, {"op": "embed", "texts": texts, "query": query}):
         if event["type"] == "embeddings":
-            return event["vectors"]
-    raise RuntimeError("The embedding model returned no vectors")
+            vectors = event["vectors"]
+    if vectors is None:
+        raise RuntimeError("The embedding model returned no vectors")
+    return vectors
 
 
 async def reap():

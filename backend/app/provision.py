@@ -30,17 +30,23 @@ def download(url, dest):
     part = dest.with_suffix(dest.suffix + ".part")
     state = dest.with_suffix(dest.suffix + ".progress.json")
     chunk_size = 1024 * 1024
+    total = (size + chunk_size - 1) // chunk_size
     done = set()
     if state.exists() and part.exists():
-        previous = json.loads(state.read_text())
-        if previous.get("etag") == etag and previous.get("size") == size:
-            done = set(previous.get("done", []))
+        try:
+            previous = json.loads(state.read_text())
+            completed = previous.get("done", [])
+            if (previous.get("etag") == etag and previous.get("size") == size
+                    and isinstance(completed, list)
+                    and all(type(i) is int and 0 <= i < total for i in completed)):
+                done = set(completed)
+        except (OSError, ValueError, AttributeError, TypeError):
+            pass  # An interrupted checkpoint is safely replaced by a fresh download.
     if not part.exists() or part.stat().st_size != size:
         with part.open("wb") as file:
             file.truncate(size)
         done = set()
     lock = threading.Lock()
-    total = (size + chunk_size - 1) // chunk_size
     last_progress = [0.0]
 
     def chunk(index):
@@ -60,7 +66,9 @@ def download(url, dest):
                     file.write(data)
                 with lock:
                     done.add(index)
-                    state.write_text(json.dumps({"size": size, "etag": etag, "done": sorted(done)}))
+                    checkpoint = state.with_suffix(state.suffix + ".tmp")
+                    checkpoint.write_text(json.dumps({"size": size, "etag": etag, "done": sorted(done)}))
+                    checkpoint.replace(state)
                     if time.monotonic() - last_progress[0] > 10:
                         print(f"{dest.name}: {len(done) * 100 // total}%", flush=True)
                         last_progress[0] = time.monotonic()

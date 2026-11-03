@@ -24,6 +24,3 @@ samples/
 
 # macOS
 .DS_Store
-
-# Local native-runtime experiments (preserved on disk)
-/experiments/

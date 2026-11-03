@@ -163,7 +163,9 @@ def chat(request):
                             scaled.save(image, "JPEG", quality=95)
                     images.append(str(image))
         # Ensure the final template plus output fits the compiled QAIRT context.
-        max_tokens = min(params.get("max_tokens", 1024), 1536)
+        # OCR needs ingestion's full requested budget, not the assistant's cap.
+        limit = _spec["context"] - 32 if _spec.get("role") == "ocr" else 1536
+        max_tokens = min(params.get("max_tokens", 1024), limit)
         # QAIRT's template is stateful: reset BEFORE formatting so system
         # instructions and tools are included on every independent request.
         _model.reset()
@@ -198,7 +200,9 @@ def chat(request):
             output = stream.output
         else:
             output = _model.generate(prompt, **kwargs)
-        if output.profile.stop_reason in ("context_length",):
+        if _spec.get("role") == "ocr" and output.profile.stop_reason in ("length", "context_length"):
+            raise RuntimeError("OCR output was truncated by the model's token/context limit. Split the page into smaller images and retry; partial text was not accepted.")
+        if output.profile.stop_reason == "context_length":
             raise RuntimeError("The model context is full; shorten the request or start a new chat")
         text = output.text.strip()
         if schema:
