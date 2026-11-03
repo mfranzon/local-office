@@ -26,6 +26,31 @@ The Nomic session requires NPU placement with CPU fallback disabled.
 The Snapdragon backend is selected automatically on Windows ARM64. Set
 `LOCAL_OFFICE_BACKEND=llama` when running the regular backend to opt out.
 
+### How this differs from existing Windows x64 support
+
+| | Existing Windows x64 | Windows ARM64 Snapdragon |
+|---|---|---|
+| Desktop | pywebview / WebView2; existing Inno Setup installer | Electron ARM64; source-checkout launcher |
+| Inference transport | OpenAI-compatible HTTP to a `llama-server.exe` per role | JSONL to one isolated Python worker using native runtime APIs |
+| Runtime | Official llama.cpp build; CUDA 12.4 by default, CPU fallback; optional Vulkan/CPU builds | GenieX QAIRT for the assistant, GenieX llama.cpp Hexagon for OCR/vision, ONNX Runtime QNN for embeddings |
+| Scheduling | Servers start on demand and can stay loaded together | One model role at a time to avoid NPU session conflicts |
+| Model roles | Assistant (also handles images), OCR, embeddings | Assistant, OCR, embeddings, separate general vision role |
+
+The Qualcomm path does not launch `llama-server.exe`. OCR and general vision
+still use llama.cpp through GenieX's native API. The existing Windows x64 build
+scripts, WebView2 entry point, llama-server download/launch arguments and HTTP
+inference path are preserved. GenieX/QNN dependencies are an optional
+`snapdragon` extra; the x64 installer continues to use the base dependencies.
+
+Regression tests exercise Windows x64/ARM64 backend selection, the ARM64 llama
+opt-out, existing saved model compatibility, llama-server supervision routing,
+and HTTP completion, image streaming and embeddings. HTTP responses and x64
+architecture detection are simulated on the ARM64 test machine. A Windows x64
+installer launch and NVIDIA/CUDA execution have not been retested on x64 hardware.
+The Snapdragon launch scripts explicitly select the Qualcomm backend; use the
+regular entry point for the llama opt-out. Keep each backend's data directory
+separate because their embedding models and index dimensions differ.
+
 Data is kept in `data/snapdragon/`, model downloads in `models/` and the GenieX
 cache, and runtime files in `build/geniex/`. These are excluded from Git. Documents
 stay on the computer. Setup and model downloads require an internet connection;
