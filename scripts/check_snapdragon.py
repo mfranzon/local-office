@@ -1,9 +1,13 @@
 """Exercise installed models with real NPU inference, without changing app data."""
 import asyncio
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+root = Path(__file__).resolve().parents[1]
+os.environ["LOCAL_OFFICE_BACKEND"] = "snapdragon"
+os.environ.setdefault("MODELS_DIR", str(root / "models"))
+sys.path.insert(0, str(root / "backend"))
 from app import models, npu
 from app.llm import image_part
 

@@ -84,6 +84,8 @@ async function start() {
     item.setSaveDialogOptions({ defaultPath: path.join(app.getPath('downloads'), path.basename(item.getFilename())) });
   });
   await window.loadURL(base);
+  // Chromium layout adjustments belong to this optional shell, not the Mac UI.
+  await window.webContents.insertCSS('html, body { overflow: hidden; } textarea { min-width: 0; min-height: 40px; }');
   window.show();
   window.focus();
   window.on('closed', () => { window = null; app.quit(); });

@@ -67,6 +67,7 @@ def test_image_requests_use_vision_and_plain_requests_use_assistant(monkeypatch)
 
 
 def test_wiki_windows_retain_end_of_long_pages(monkeypatch):
+    monkeypatch.setattr(wiki, "SNAPDRAGON", True)
     monkeypatch.setattr(wiki, "WINDOW_CHARS", 3500)
     windows = wiki._windows([{"n": 7, "text": "a" * 6000 + "The final payment is due in December."}])
     assert len(windows) == 2

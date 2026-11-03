@@ -16,9 +16,14 @@ Push-Location (Join-Path $Root 'frontend')
 try {
     npm ci --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) { throw 'Frontend dependency setup failed.' }
-    node node_modules/electron/install.js
-    if ($LASTEXITCODE -ne 0) { throw 'Desktop runtime setup failed.' }
     npm run build
     if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed.' }
+} finally { Pop-Location }
+Push-Location (Join-Path $Root 'desktop')
+try {
+    npm ci --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop dependency setup failed.' }
+    node node_modules/electron/install.js
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop runtime setup failed.' }
 } finally { Pop-Location }
 Write-Host 'Ready. Open Start Local Office.cmd.'

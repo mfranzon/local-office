@@ -8,7 +8,7 @@ dependencies = [
   "python-multipart>=0.0.20",
   "httpx>=0.28",
   "sqlite-vec>=0.1.6; sys_platform != 'win32' or platform_machine != 'ARM64'",
-  "numpy>=2.1",
+  "numpy>=2.1; sys_platform == 'win32' and platform_machine == 'ARM64'",
   "pypdfium2>=4.30",
   "pillow>=11",
   "pillow-heif>=0.21",

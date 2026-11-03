@@ -2,11 +2,15 @@
 import json
 import sqlite3
 import struct
+import platform
+import sys
 from contextlib import contextmanager
 
 try:
     import sqlite_vec
 except ImportError:  # No sqlite-vec wheel exists for Windows ARM64.
+    if sys.platform != "win32" or platform.machine().upper() != "ARM64":
+        raise
     sqlite_vec = None
 
 from .config import DATA_DIR, EMBED_DIM
@@ -180,9 +184,9 @@ def vec(v: list[float]) -> bytes:
 
 def nearest(conn, vector: list[float], k: int, doc_ids: list[str] | None = None):
     """Cosine search, using a native extension where available or exact NumPy on ARM64."""
-    if sqlite_vec is not None and not doc_ids:
+    if sqlite_vec is not None:
         return conn.execute("SELECT rowid FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance",
-                            (vec(vector), k)).fetchall()
+                            (vec(vector), k * (4 if doc_ids else 1))).fetchall()
     import numpy as np
     sql = "SELECT v.rowid, v.embedding FROM vec_chunks v JOIN chunks c ON c.id=v.rowid"
     params = []

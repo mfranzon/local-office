@@ -477,7 +477,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "numpy" },
+    { name = "numpy", marker = "platform_machine == 'ARM64' and sys_platform == 'win32'" },
     { name = "openpyxl" },
     { name = "pillow" },
     { name = "pillow-heif" },
@@ -513,7 +513,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "huggingface-hub", marker = "extra == 'snapdragon'", specifier = ">=0.30" },
     { name = "jsonschema", marker = "extra == 'snapdragon'", specifier = ">=4.23" },
-    { name = "numpy", specifier = ">=2.1" },
+    { name = "numpy", marker = "platform_machine == 'ARM64' and sys_platform == 'win32'", specifier = ">=2.1" },
     { name = "onnxruntime", marker = "extra == 'snapdragon'", specifier = ">=1.30" },
     { name = "onnxruntime-qnn", marker = "extra == 'snapdragon'", specifier = "==2.7.0" },
     { name = "openpyxl", specifier = ">=3.1" },

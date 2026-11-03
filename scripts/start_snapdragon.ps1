@@ -16,7 +16,7 @@ Set-Location (Join-Path $Root 'backend')
 if ($ServerOnly) {
     & $Python -m uvicorn app.main:app --host 127.0.0.1 --port $Port
 } else {
-    $Electron = Join-Path $Root 'frontend\node_modules\electron\dist\electron.exe'
+    $Electron = Join-Path $Root 'desktop\node_modules\electron\dist\electron.exe'
     if (-not (Test-Path -LiteralPath $Electron)) { throw 'Run scripts\setup_snapdragon.ps1 first.' }
     & $Electron (Join-Path $Root 'desktop\main.cjs')
 }

@@ -20,7 +20,7 @@ from app import llm, models
 @pytest.mark.parametrize("machine,backend,npu", [
     ("AMD64", None, False),
     ("AMD64", "llama", False),
-    ("ARM64", None, True),
+    ("ARM64", None, False),
     ("ARM64", "llama", False),
     ("ARM64", "snapdragon", True),
 ])
@@ -33,7 +33,9 @@ def test_windows_backend_selection_in_fresh_process(machine, backend, npu):
     code = f"""
 import platform
 platform.machine = lambda: {machine!r}
-import json, sys
+import json, sys, types
+# This host lacks the x64 sqlite-vec wheel; only platform selection is under test.
+sys.modules['sqlite_vec'] = types.ModuleType('sqlite_vec')
 from app import config, models
 print(json.dumps({{
     'npu': config.SNAPDRAGON, 'roles': config.ROLES, 'dim': config.EMBED_DIM,
@@ -43,7 +45,8 @@ print(json.dumps({{
 """
     result = subprocess.run([sys.executable, "-c", code], env=env,
                             cwd=Path(__file__).resolve().parents[1],
-                            capture_output=True, text=True, check=True)
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
     config = json.loads(result.stdout)
     assert config["npu"] is npu
     assert config["roles"] == (["assistant", "ocr", "embed", "vision"] if npu else ["assistant", "ocr", "embed"])
@@ -58,6 +61,51 @@ def test_existing_saved_model_without_provider_still_loads_as_llama():
     spec = models.Spec(**saved)
     assert spec.provider == "llama"
     assert spec.files == [saved["file"], saved["mmproj"]]
+
+
+def test_mac_configuration_keeps_original_roles_and_no_native_npu_imports():
+    env = os.environ.copy()
+    env.pop("LOCAL_OFFICE_BACKEND", None)
+    env.pop("EMBED_DIM", None)
+    code = """
+import sys, platform, subprocess, types, urllib.request
+from unittest.mock import patch
+# Supply the Mac-only native dependency when simulating Mac imports on Windows.
+sys.modules['sqlite_vec'] = types.ModuleType('sqlite_vec')
+with patch.object(sys, 'platform', 'darwin'), patch.object(platform, 'machine', return_value='arm64'), patch.object(subprocess, 'run') as run:
+    run.return_value.stdout = '25769803776'
+    from app import config, models
+    assert config.MAC and not config.SNAPDRAGON
+    assert config.ROLES == ('assistant', 'ocr', 'embed')
+    assert config.EMBED_DIM == 1024
+    assert models.CATALOG is models.LLAMA_CATALOG
+    assert models.recommended('assistant', 24).name == 'Qwen3.5 9B'
+    assert not any(n in sys.modules for n in ('geniex', 'onnxruntime', 'app.npu_worker'))
+"""
+    result = subprocess.run([sys.executable, "-c", code], env=env,
+                            cwd=Path(__file__).resolve().parents[1],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_native_vector_query_preserves_existing_scoped_candidate_count(monkeypatch):
+    from app import db
+    from unittest.mock import Mock
+    monkeypatch.setattr(db, "sqlite_vec", object())
+    conn = Mock()
+    conn.execute.return_value.fetchall.return_value = [(1,)]
+    assert db.nearest(conn, [1., 0.], 40, ["doc1"]) == [(1,)]
+    sql, params = conn.execute.call_args.args
+    assert "embedding MATCH ? AND k = ?" in sql
+    assert params == (db.vec([1., 0.]), 160)
+
+
+def test_legacy_wiki_windowing_is_preserved(monkeypatch):
+    from app import wiki
+    monkeypatch.setattr(wiki, "SNAPDRAGON", False)
+    monkeypatch.setattr(wiki, "WINDOW_CHARS", 9000)
+    pages = [{"n": 1, "text": "a" * 10000}, {"n": 2, "text": "next page"}]
+    assert wiki._windows(pages) == ["=== Page 1 ===\n" + "a" * 9000 + "\n\n", "=== Page 2 ===\nnext page\n\n"]
 
 
 def test_llama_http_completion_streaming_images_and_embeddings(monkeypatch):

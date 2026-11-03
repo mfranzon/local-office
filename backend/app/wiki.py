@@ -59,7 +59,6 @@ SYSTEM = """You maintain an office knowledge base. Read the document and fill th
   NOT entities: products, services, invoice line items, departments or offices of the same company, the document itself.
   Places (cities, airports, stations, venues, addresses) get type "place"; an address of an entity is its "address" fact.
   role: this entity's single role in THIS document (e.g. "supplier", "client", "employee", "signatory"); null if unclear.
-  Put role on the entity itself, never inside facts. Facts may be an empty array.
   facts: identifiers and contact data written in the text, copied exactly (vat_id, tax_code, iban, email, phone, address),
   job_title for people, note for other key facts about the entity.
 - relations: links between two extracted entities (exact names), e.g. person "works at" organization.
@@ -71,6 +70,9 @@ SYSTEM = """You maintain an office knowledge base. Read the document and fill th
   If the year is missing, use the document's year.
 - Use only what is written; never guess. Dates as YYYY-MM-DD. Write summary and "what" in the document's language.
   page = page number of the fact. summary = 2 sentences about the document."""
+
+if SNAPDRAGON:
+    SYSTEM += "\nPut role on the entity itself, never inside facts. Facts may be an empty array."
 
 SUMMARY_SYSTEM = """Write a 2-3 sentence overview of this entity for an office wiki, using ONLY the facts given.
 Write in the same language as the facts. No preamble, no lists, no citations."""
@@ -136,6 +138,13 @@ def slugify(name: str) -> str:
 def _windows(pages: list[dict]) -> list[str]:
     out, cur = [], ""
     for p in pages:
+        if not SNAPDRAGON:
+            block = f"=== Page {p['n']} ===\n{p['text'][:WINDOW_CHARS]}\n\n"
+            if cur and len(cur) + len(block) > WINDOW_CHARS:
+                out.append(cur)
+                cur = ""
+            cur += block
+            continue
         width = WINDOW_CHARS - 40
         for offset in range(0, max(1, len(p["text"])), width):
             block = f"=== Page {p['n']} ===\n{p['text'][offset:offset + width]}\n\n"

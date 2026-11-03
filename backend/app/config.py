@@ -6,9 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-SNAPDRAGON = os.environ.get("LOCAL_OFFICE_BACKEND", "").lower() == "snapdragon" or (
-    sys.platform == "win32" and platform.machine().upper() == "ARM64"
-    and os.environ.get("LOCAL_OFFICE_BACKEND", "").lower() != "llama")
+# Optional platform backend: existing app entry points keep llama-server.
+# The Snapdragon launcher sets this explicitly after its separate setup.
+SNAPDRAGON = os.environ.get("LOCAL_OFFICE_BACKEND", "").lower() == "snapdragon"
 ROLES = ("assistant", "ocr", "embed", "vision") if SNAPDRAGON else ("assistant", "ocr", "embed")
 REPO = Path(__file__).resolve().parents[2]
 BUNDLE = Path(getattr(sys, "_MEIPASS", REPO))          # PyInstaller unpacks bundled resources here
