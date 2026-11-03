@@ -1,5 +1,65 @@
 # Local Office
 
+## Windows on Snapdragon
+
+This checkout includes a native Windows ARM64 configuration for Snapdragon X Elite.
+Open **Start Local Office.cmd** to launch the desktop app. For a fresh setup, run
+`powershell -ExecutionPolicy Bypass -File scripts\setup_snapdragon.ps1` first.
+Setup requires ARM64 Python 3.12, uv, and Node.js 22.12+; it downloads the model assets once.
+Validated on Windows with a Snapdragon X Elite X1E80100 and 32 GB RAM;
+other Qualcomm generations and fresh-machine installs have not been validated.
+The Windows shell uses ARM64 Electron with an isolated renderer, a native folder
+picker, and a private loopback Python service that stops when the app exits.
+
+| Task | Model | Runtime |
+|---|---|---|
+| Chat, cited answers, wiki and skills | Qwen3-4B-Instruct-2507 | GenieX QAIRT, NPU |
+| Scans and document OCR | LightOnOCR-2-1B Q8_0 + F16 projector | GenieX llama.cpp, NPU |
+| Document search embeddings | Nomic-Embed-Text v1.5, 512 dimensions | Qualcomm AI Hub ONNX export, QNN NPU |
+| Images and charts | Qwen3-VL-4B-Instruct Q4_0 + F16 projector | GenieX llama.cpp, NPU |
+
+The app uses the verified GenieX 0.10.0 runtime, with `GGML_HEXAGON_DEVICES=HTP0`.
+Inference roles take turns in isolated worker processes, avoiding the X Elite
+second-session queue failure and collisions between GenieX and ONNX Runtime.
+Host preprocessing, sampling and auxiliary vision operators may still use the CPU.
+The Nomic session requires NPU placement with CPU fallback disabled.
+The Snapdragon backend is selected automatically on Windows ARM64. Set
+`LOCAL_OFFICE_BACKEND=llama` when running the regular backend to opt out.
+
+Data is kept in `data/snapdragon/`, model downloads in `models/` and the GenieX
+cache, and runtime files in `build/geniex/`. These are excluded from Git. Documents
+stay on the computer. Setup and model downloads require an internet connection;
+normal inference uses local files. The preinstalled GenieX CLI is not modified.
+
+Windows ARM64 uses exact NumPy cosine search alongside SQLite FTS5 because
+sqlite-vec does not publish an ARM64 Windows wheel. This is suitable for small
+office libraries; very large indexes will benefit from a native vector extension.
+
+To run the API and UI without the desktop window:
+
+```powershell
+scripts\start_snapdragon.ps1 -ServerOnly -Port 8765
+# Open http://127.0.0.1:8765
+```
+
+Validation commands:
+
+```powershell
+cd backend
+.venv\Scripts\python.exe -m pytest -q
+cd ..\frontend
+npm run build
+```
+
+`scripts/check_snapdragon.py` exercises the actual installed models;
+`scripts/smoke_app.py` checks OCR ingestion, cited answers, wiki extraction and
+an Excel export against a running server using a labeled synthetic invoice.
+Set `MODELS_DIR` to this checkout's `models` directory for standalone checks.
+Image understanding remains probabilistic: use the OCR/document workflow for
+exact transcription and verify cited source pages for important facts.
+
+---
+
 Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photos and Office files, then ask questions and get answers that cite the exact page. A built-in wiki (your "second brain") compiles what your documents say about companies, people and deadlines. Everything runs on the Mac, and no file leaves the computer.
 
 ![Ask your documents](docs/screenshots/ask.png)

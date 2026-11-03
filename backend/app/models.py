@@ -15,7 +15,7 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from . import runtime
-from .config import HOST_CHIP, HOST_RAM_GB, HOST_VRAM_MB, MAC, MODELS_DIR, ROLES
+from .config import HOST_CHIP, HOST_RAM_GB, HOST_VRAM_MB, MAC, MODELS_DIR, ROLES, SNAPDRAGON
 from .db import db, get_setting, recreate_vec_table, set_setting, vec
 
 _http = httpx.AsyncClient(timeout=httpx.Timeout(600, connect=5))
@@ -36,10 +36,11 @@ class Spec:
     doc_prefix: str = ""        # embed only
     prompt: str = ""            # ocr only
     min_ram_gb: int = 8         # Mac RAM needed with the other recommended models loaded
+    provider: str = "llama"
 
     @property
     def ref(self) -> str:
-        return f"{self.repo}/{self.file}"
+        return f"{self.repo}/{self.file}".rstrip("/")
 
     @property
     def files(self) -> list[str]:
@@ -68,6 +69,9 @@ class Spec:
 
     @property
     def downloaded(self) -> bool:
+        if self.provider != "llama":
+            from . import npu
+            return npu.have(self)
         return runtime.have(self.repo, self.files)
 
 
@@ -91,6 +95,20 @@ CATALOG = [
     Spec("embed", "ggml-org/embeddinggemma-300M-GGUF", "embeddinggemma-300M-Q8_0.gguf", "", "EmbeddingGemma 300M", 330, ("light",),
          context=2048, flags=_EMBED_FLAGS, query_prefix="task: search result | query: ", doc_prefix="title: none | text: "),
 ]
+
+LLAMA_CATALOG = CATALOG
+if SNAPDRAGON:
+    CATALOG = [
+        Spec("assistant", "qualcomm/Qwen3-4B-Instruct-2507", "", name="Qwen3 4B Instruct · GenieX NPU",
+             size_mb=3200, context=4096, tags=("balanced",), provider="geniex-qairt"),
+        Spec("ocr", "ggml-org/LightOnOCR-2-1B-GGUF", "LightOnOCR-2-1B-Q8_0.gguf",
+             "mmproj-LightOnOCR-2-1B-f16.gguf", name="LightOnOCR-2 1B · GenieX NPU", size_mb=1460,
+             context=4096, prompt="Convert this document page to markdown.", tags=("quality",), provider="geniex-gguf"),
+        Spec("embed", "qualcomm/Nomic-Embed-Text", "", name="Nomic Embed v1.5 · AI Hub NPU", size_mb=523,
+             context=128, tags=("quality",), provider="aihub"),
+        Spec("vision", "unsloth/Qwen3-VL-4B-Instruct-GGUF", "Qwen3-VL-4B-Instruct-Q4_0.gguf", "mmproj-F16.gguf",
+             name="Qwen3 VL 4B · GenieX NPU", size_mb=3200, context=2048, tags=("quality",), provider="geniex-gguf"),
+    ]
 
 
 def recommended(role: str, ram_gb: int = HOST_RAM_GB) -> Spec:
@@ -184,6 +202,14 @@ def _test_image(text: str) -> bytes:
     return buf.getvalue()
 
 
+def _test_vision_image() -> bytes:
+    image = Image.new("RGB", (512, 512), "white")
+    ImageDraw.Draw(image).rectangle((50, 100, 460, 400), fill="blue")
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
 async def test(spec: Spec, base: str) -> dict:
     """Returns facts about the model (e.g. embedding size); raises with a readable reason if unusable."""
     from .llm import NO_THINK, image_part
@@ -237,7 +263,38 @@ switch_lock = asyncio.Lock()
 
 async def switch(role: str, ref: str) -> AsyncIterator[dict]:
     yield {"type": "progress", "step": "pull", "percent": 0}
-    spec = from_catalog(role, ref) or await resolve_custom(role, ref)
+    spec = from_catalog(role, ref)
+    if SNAPDRAGON:
+        if spec is None:
+            raise ValueError("Choose a validated Snapdragon model from the catalog")
+        from . import npu, provision
+        await asyncio.to_thread(provision.install_model, spec)
+        yield {"type": "progress", "step": "test"}
+        if role == "embed":
+            vectors = await npu.embed(spec, ["search test"])
+            facts = {"dim": len(vectors[0])}
+        else:
+            from .llm import image_part
+            messages = [{"role": "user", "content": "Reply with OK only."}]
+            if role in ("ocr", "vision"):
+                messages[0]["content"] = [image_part(_test_image("Codice 47815")),
+                                          {"type": "text", "text": spec.prompt or "Read the number."}]
+            if role == "vision":
+                messages[0]["content"] = [image_part(_test_vision_image(), "image/png"),
+                                          {"type": "text", "text": "What color is the rectangle? Reply in English."}]
+            reply = await npu.complete(spec, messages, max_tokens=256)
+            if not reply.get("content") or (role == "ocr" and "47815" not in reply["content"]) or (role == "vision" and "blue" not in reply["content"].lower()):
+                raise ValueError("The model did not pass its role test")
+            facts = {}
+        with db() as conn:
+            set_setting(conn, f"model.{role}", asdict(spec))
+        _active[role] = spec
+        if role == "embed":
+            async for ev in reindex(spec, facts["dim"]):
+                yield ev
+        yield {"type": "switched", "role": role, "model": asdict(spec)}
+        return
+    spec = spec or await resolve_custom(role, ref)
     async for pct in runtime.download(spec.repo, spec.files):
         yield {"type": "progress", "step": "pull", "percent": pct}
     yield {"type": "progress", "step": "configure"}
@@ -281,6 +338,12 @@ async def download_missing() -> AsyncIterator[dict]:
     total = sum(s.size_mb for s in todo) or 1
     done = 0
     for spec in todo:
+        if spec.provider != "llama":
+            from .provision import install_model
+            yield {"type": "progress", "step": "pull", "model": spec.name, "percent": int(100 * done / total)}
+            await asyncio.to_thread(install_model, spec)
+            done += spec.size_mb
+            continue
         async for pct in runtime.download(spec.repo, spec.files):
             yield {"type": "progress", "step": "pull", "model": spec.name,
                    "percent": min(99, int(100 * (done + spec.size_mb * pct / 100) / total))}

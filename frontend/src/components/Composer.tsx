@@ -16,7 +16,7 @@ export default function Composer({ placeholder, busy, onSend, onStop, seed, skil
   useEffect(() => {
     const el = ref.current!;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    el.style.height = Math.max(40, Math.min(el.scrollHeight, 200)) + "px";
   }, [text]);
   useEffect(() => { if (seed) { setText(seed.text); ref.current?.focus(); } }, [seed]);
 
@@ -67,7 +67,7 @@ export default function Composer({ placeholder, busy, onSend, onStop, seed, skil
       <div className="flex items-end gap-2 bg-white border border-slate-300 rounded-2xl p-2 pl-4 shadow-sm focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/15">
         <textarea ref={ref} rows={1} value={text} autoFocus placeholder={placeholder}
           onChange={(e) => setText(e.target.value)} onKeyDown={onKey}
-          className="flex-1 resize-none outline-none py-2 text-[15px] bg-transparent" />
+          className="flex-1 min-w-0 min-h-10 resize-none outline-none py-2 text-[15px] bg-transparent" />
         {busy ? (
           <button onClick={onStop} title={t("stop")} className="w-9 h-9 rounded-xl bg-slate-800 text-white grid place-items-center"><Square size={14} fill="white" /></button>
         ) : (

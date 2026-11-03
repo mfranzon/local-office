@@ -6,7 +6,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROLES = ("assistant", "ocr", "embed")
+SNAPDRAGON = os.environ.get("LOCAL_OFFICE_BACKEND", "").lower() == "snapdragon" or (
+    sys.platform == "win32" and platform.machine().upper() == "ARM64"
+    and os.environ.get("LOCAL_OFFICE_BACKEND", "").lower() != "llama")
+ROLES = ("assistant", "ocr", "embed", "vision") if SNAPDRAGON else ("assistant", "ocr", "embed")
 REPO = Path(__file__).resolve().parents[2]
 BUNDLE = Path(getattr(sys, "_MEIPASS", REPO))          # PyInstaller unpacks bundled resources here
 
@@ -24,7 +27,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", _DEFAULT_DATA))
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", DATA_DIR / "models"))
 LOGS_DIR = DATA_DIR / "logs"
 STATIC_DIR = Path(os.environ.get("STATIC_DIR", BUNDLE / "ui" if hasattr(sys, "_MEIPASS") else REPO / "frontend/dist"))
-EMBED_DIM = int(os.environ.get("EMBED_DIM", 1024))
+EMBED_DIM = int(os.environ.get("EMBED_DIM", 512 if SNAPDRAGON else 1024))
 BUILTIN_SKILLS = BUNDLE / "skills"                      # shipped with the app; user skills live in DATA_DIR/skills
 
 

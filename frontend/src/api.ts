@@ -1,5 +1,9 @@
 export type DocStatus = "queued" | "processing" | "ready" | "error";
 
+declare global {
+  interface Window { localOffice?: { pickFolder: () => Promise<string | null> } }
+}
+
 export interface Doc {
   id: string;
   name: string;
@@ -95,7 +99,7 @@ export interface SetupStatus {
   disk_free_gb: number;
 }
 
-export type Role = "assistant" | "ocr" | "embed";
+export type Role = "assistant" | "ocr" | "embed" | "vision";
 
 export interface ModelSpec {
   role: Role;
@@ -105,6 +109,7 @@ export interface ModelSpec {
   tags: string[];
   downloaded: boolean;
   min_ram_gb: number;
+  provider?: string;
 }
 
 export type ModelSettings = Record<Role, { active: ModelSpec; recommended: string; choices: ModelSpec[] }>
@@ -157,8 +162,10 @@ export const api = {
   distinct: (keep_id: number, other_id: number) => post("/api/wiki/review/distinct", { keep_id, other_id }),
   rebuildWiki: () => post("/api/wiki/rebuild", {}),
   exportUrl: (lang: string) => `/api/wiki/export.zip?lang=${lang}`,
-  sources: () => fetch("/api/sources").then(json<{ sources: SourceInfo[]; can_pick_folder: boolean }>),
-  pickFolder: () => post("/api/sources/pick-folder", {}) as Promise<{ path: string | null }>,
+  sources: () => fetch("/api/sources").then(json<{ sources: SourceInfo[]; can_pick_folder: boolean }>).then(r =>
+    ({ ...r, can_pick_folder: r.can_pick_folder || !!window.localOffice })),
+  pickFolder: () => window.localOffice ? window.localOffice.pickFolder().then(path => ({ path }))
+    : post("/api/sources/pick-folder", {}) as Promise<{ path: string | null }>,
   addFolder: (path: string) => post("/api/sources/folder", { path }),
   syncSource: (id: number) => post(`/api/sources/${id}/sync`, {}),
   removeSource: (id: number) => fetch(`/api/sources/${id}`, { method: "DELETE" }).then(json),

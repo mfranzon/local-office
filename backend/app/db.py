@@ -4,7 +4,10 @@ import sqlite3
 import struct
 from contextlib import contextmanager
 
-import sqlite_vec
+try:
+    import sqlite_vec
+except ImportError:  # No sqlite-vec wheel exists for Windows ARM64.
+    sqlite_vec = None
 
 from .config import DATA_DIR, EMBED_DIM
 
@@ -118,14 +121,17 @@ MIGRATIONS = [  # columns added after the first release; ALTER fails harmlessly 
     "ALTER TABLE documents ADD COLUMN source_mtime REAL",
 ]
 VEC_TABLE = "CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(embedding float[{dim}] distance_metric=cosine)"
+if sqlite_vec is None:
+    VEC_TABLE = "CREATE TABLE IF NOT EXISTS vec_chunks (rowid INTEGER PRIMARY KEY, embedding BLOB NOT NULL)"
 
 
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DATA_DIR / "office.db", timeout=30)
     conn.row_factory = sqlite3.Row
-    conn.enable_load_extension(True)
-    sqlite_vec.load(conn)
-    conn.enable_load_extension(False)
+    if sqlite_vec is not None:
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")
     return conn
@@ -170,3 +176,23 @@ def set_setting(conn: sqlite3.Connection, key: str, value):
 
 def vec(v: list[float]) -> bytes:
     return struct.pack(f"{len(v)}f", *v)
+
+
+def nearest(conn, vector: list[float], k: int, doc_ids: list[str] | None = None):
+    """Cosine search, using a native extension where available or exact NumPy on ARM64."""
+    if sqlite_vec is not None and not doc_ids:
+        return conn.execute("SELECT rowid FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance",
+                            (vec(vector), k)).fetchall()
+    import numpy as np
+    sql = "SELECT v.rowid, v.embedding FROM vec_chunks v JOIN chunks c ON c.id=v.rowid"
+    params = []
+    if doc_ids:
+        sql += " WHERE c.doc_id IN (" + ",".join("?" for _ in doc_ids) + ")"
+        params = doc_ids
+    rows = conn.execute(sql, params).fetchall()
+    if not rows:
+        return []
+    matrix = np.stack([np.frombuffer(row[1], dtype=np.float32) for row in rows])
+    query = np.asarray(vector, dtype=np.float32)
+    scores = (matrix @ query) / np.maximum(np.linalg.norm(matrix, axis=1) * np.linalg.norm(query), 1e-12)
+    return [(rows[i][0],) for i in np.argsort(-scores, kind="stable")[:k]]

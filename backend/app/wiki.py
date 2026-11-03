@@ -13,10 +13,11 @@ from datetime import date
 
 from . import llm
 from .db import db
+from .config import SNAPDRAGON
 
 log = logging.getLogger(__name__)
 
-WINDOW_CHARS = 9000          # ~2.5k tokens of document text per extraction call
+WINDOW_CHARS = 3500 if SNAPDRAGON else 9000
 MAX_WINDOWS = 12
 IDENTIFIERS = ("vat_id", "tax_code", "iban", "email", "phone")
 HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "sig", "sigra", "signa", "dott", "dottssa", "ing", "avv", "geom", "rag"}
@@ -58,6 +59,7 @@ SYSTEM = """You maintain an office knowledge base. Read the document and fill th
   NOT entities: products, services, invoice line items, departments or offices of the same company, the document itself.
   Places (cities, airports, stations, venues, addresses) get type "place"; an address of an entity is its "address" fact.
   role: this entity's single role in THIS document (e.g. "supplier", "client", "employee", "signatory"); null if unclear.
+  Put role on the entity itself, never inside facts. Facts may be an empty array.
   facts: identifiers and contact data written in the text, copied exactly (vat_id, tax_code, iban, email, phone, address),
   job_title for people, note for other key facts about the entity.
 - relations: links between two extracted entities (exact names), e.g. person "works at" organization.
@@ -134,11 +136,13 @@ def slugify(name: str) -> str:
 def _windows(pages: list[dict]) -> list[str]:
     out, cur = [], ""
     for p in pages:
-        block = f"=== Page {p['n']} ===\n{p['text'][:WINDOW_CHARS]}\n\n"
-        if cur and len(cur) + len(block) > WINDOW_CHARS:
-            out.append(cur)
-            cur = ""
-        cur += block
+        width = WINDOW_CHARS - 40
+        for offset in range(0, max(1, len(p["text"])), width):
+            block = f"=== Page {p['n']} ===\n{p['text'][offset:offset + width]}\n\n"
+            if cur and len(cur) + len(block) > WINDOW_CHARS:
+                out.append(cur)
+                cur = ""
+            cur += block
     return (out + [cur] if cur.strip() else out)[:MAX_WINDOWS]
 
 

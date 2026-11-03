@@ -13,7 +13,7 @@ from PIL import Image
 from pydantic import BaseModel
 
 from . import agent, ingest, llm, models, rag, runtime, skills, sources, tools, wiki, wiki_views
-from .config import ROLES, STATIC_DIR
+from .config import ROLES, STATIC_DIR, SNAPDRAGON
 from .db import db, init
 
 
@@ -493,16 +493,34 @@ def _to_jpeg(data: bytes) -> bytes:
 
 
 @app.post("/api/vision")
-async def vision(image: UploadFile = File(...), messages: str = Form(...)):
+async def vision(image: UploadFile = File(...), messages: str = Form(...), mode: str = Form("vision")):
     try:
         jpeg = await asyncio.to_thread(_to_jpeg, await image.read())
     except Exception:
         raise HTTPException(400, "unsupported image")
-    history = json.loads(messages)
+    try:
+        history = json.loads(messages)
+        if not isinstance(history, list) or not history or any(m.get("role") not in ("user", "assistant") or not isinstance(m.get("content"), str) for m in history):
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(400, "invalid conversation")
+    if mode not in ("vision", "ocr", "table"):
+        raise HTTPException(400, "unknown image task")
+    plain_history = list(history)
     first = history[0]
     history[0] = {"role": "user", "content": [llm.image_part(jpeg), {"type": "text", "text": first["content"]}]}
 
     async def events():
+        if SNAPDRAGON and mode in ("ocr", "table"):
+            text = ingest.html_tables_to_markdown(await llm.chat("ocr", [{"role": "user", "content": [
+                llm.image_part(jpeg), {"type": "text", "text": models.active("ocr").prompt}]}], max_tokens=2048))
+            if mode == "ocr":
+                yield {"type": "token", "text": text}
+                return
+            msgs = [{"role": "system", "content": "Extract the tables from this OCR transcription. Copy values exactly; do not invent missing cells.\n\n" + text}, *plain_history]
+            async for token in llm.chat_stream(msgs, temperature=0):
+                yield {"type": "token", "text": token}
+            return
         msgs = [{"role": "system", "content": rag.SYSTEM_PLAIN}, *history]
         async for token in llm.chat_stream(msgs):
             yield {"type": "token", "text": token}
