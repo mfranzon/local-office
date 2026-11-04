@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from . import agent, ingest, llm, models, rag, runtime, skills, sources, tools, wiki, wiki_views
+from . import agent, ingest, llm, mcp, models, rag, runtime, skills, sources, tools, wiki, wiki_views
 from .config import ROLES, STATIC_DIR, SNAPDRAGON
 from .db import db, init
 
@@ -55,7 +55,8 @@ def sse(events):
 async def status():
     with db() as conn:
         counts = dict(conn.execute("SELECT status, count(*) FROM documents GROUP BY status").fetchall())
-    return {"models": llm.status(), "documents": counts}
+    return {"models": llm.status(), "documents": counts,
+            "connected": [s["name"] for s in mcp.servers() if s.get("enabled")]}
 
 
 # --- first run: download the default models ---
@@ -203,16 +204,17 @@ class ChatRequest(BaseModel):
     doc_ids: list[str] | None = None
 
 
-async def _pick_skill(req: ChatRequest) -> skills.Skill | None:
-    """'/name request' runs that skill; otherwise the assistant may route the message to an enabled skill."""
+async def _pick_skill(req: ChatRequest) -> skills.Skill | str | None:
+    """'/name request' runs that skill; otherwise the assistant may route the message to an enabled skill, or to
+    the connected services (agent.SERVICES)."""
     last = req.messages[-1]
     if last["role"] == "user" and (m := re.match(r"/([a-z0-9-]+)\s*(.*)", last["content"], re.S)):
         skill = skills.get(m[1])
         if skill and skill.enabled:
             last["content"] = m[2].strip() or skill.description
             return skill
-    if req.use_docs and not req.doc_ids:
-        return await agent.route(last["content"], skills.enabled())
+    if not req.doc_ids:
+        return await agent.route(last["content"], skills.enabled() if req.use_docs else [])
     return None
 
 
@@ -220,7 +222,7 @@ async def _pick_skill(req: ChatRequest) -> skills.Skill | None:
 async def chat(req: ChatRequest):
     async def events():
         if skill := await _pick_skill(req):
-            async for e in agent.run(skill, req.messages):
+            async for e in agent.run(None if skill == agent.SERVICES else skill, req.messages):
                 yield e
             return
         hits = None
@@ -279,6 +281,57 @@ def toggle_skill(name: str, body: SkillToggle):
 def delete_skill(name: str):
     if not skills.delete(name):
         raise HTTPException(400, "only skills you added can be deleted")
+    return {"ok": True}
+
+
+# --- connected services (MCP servers) ---
+
+class ServerAdd(BaseModel):
+    name: str
+    url: str
+    headers: dict[str, str] = {}
+
+
+class ServerEdit(BaseModel):
+    enabled: bool | None = None
+    tools: dict[str, bool] | None = None
+    headers: dict[str, str] | None = None
+
+
+@app.get("/api/connections")
+def list_connections():
+    return [mcp.view(s) for s in mcp.servers()]
+
+
+@app.post("/api/connections")
+async def add_connection(body: ServerAdd):
+    try:
+        return mcp.view(await mcp.add(body.name, body.url, body.headers))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.patch("/api/connections/{server_id}")
+async def edit_connection(server_id: str, body: ServerEdit):
+    try:
+        s = mcp.edit(server_id, body.enabled, body.tools, body.headers)
+        return mcp.view(await mcp.refresh(server_id) if body.headers is not None else s)
+    except KeyError:
+        raise HTTPException(404, "no such connection")
+
+
+@app.post("/api/connections/{server_id}/refresh")
+async def refresh_connection(server_id: str):
+    try:
+        return mcp.view(await mcp.refresh(server_id))
+    except KeyError:
+        raise HTTPException(404, "no such connection")
+
+
+@app.delete("/api/connections/{server_id}")
+def remove_connection(server_id: str):
+    if not mcp.remove(server_id):
+        raise HTTPException(404, "no such connection")
     return {"ok": True}
 
 

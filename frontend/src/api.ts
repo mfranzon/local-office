@@ -31,6 +31,12 @@ export interface SkillInfo {
 }
 
 export interface Step { tool: string; detail: string }
+
+export interface ConnectionTool { name: string; title: string; description: string; read_only: boolean; enabled: boolean }
+export interface Connection {
+  id: string; name: string; url: string; enabled: boolean; error: string | null; checked_at?: string;
+  server_name?: string; header_names: string[]; tools: ConnectionTool[];
+}
 export interface ExportFile { name: string; url: string }
 
 export interface Page {
@@ -42,7 +48,7 @@ export interface Page {
 
 export interface Source {
   n: number;
-  kind: "doc" | "wiki";
+  kind: "doc" | "wiki" | "mcp";
   entity_id: number | null;
   doc_id: string | null;
   name: string;
@@ -122,6 +128,7 @@ export type StreamEvent =
   | { type: "token"; text: string }
   | { type: "error"; message: string }
   | { type: "skill"; name: string }
+  | { type: "services" }
   | ({ type: "step" } & Step)
   | ({ type: "file" } & ExportFile)
   | { type: "done" };
@@ -140,7 +147,7 @@ const post = (url: string, body: unknown) =>
   fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(json);
 
 export const api = {
-  status: () => fetch("/api/status").then(json<{ models: Record<string, "running" | "ready" | "missing"> }>),
+  status: () => fetch("/api/status").then(json<{ models: Record<string, "running" | "ready" | "missing">; connected: string[] }>),
   setup: () => fetch("/api/setup").then(json<SetupStatus>),
   documents: () => fetch("/api/documents").then(json<Doc[]>),
   document: (id: string) => fetch(`/api/documents/${id}`).then(json<Doc & { pages: Page[] }>),
@@ -184,6 +191,13 @@ export const api = {
   saveChat: (id: string, title: string, turns: unknown[]) =>
     fetch(`/api/chats/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title, turns }) }).then(json),
   deleteChat: (id: string) => fetch(`/api/chats/${id}`, { method: "DELETE" }).then(json),
+  connections: () => fetch("/api/connections").then(json<Connection[]>),
+  addConnection: (name: string, url: string, headers: Record<string, string>) =>
+    post("/api/connections", { name, url, headers }) as Promise<Connection>,
+  editConnection: (id: string, patch: { enabled?: boolean; tools?: Record<string, boolean>; headers?: Record<string, string> }) =>
+    fetch(`/api/connections/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then(json<Connection>),
+  refreshConnection: (id: string) => post(`/api/connections/${id}/refresh`, {}) as Promise<Connection>,
+  removeConnection: (id: string) => fetch(`/api/connections/${id}`, { method: "DELETE" }).then(json),
   modelSettings: () => fetch("/api/settings/models").then(json<ModelSettings>),
   pageUrl: (id: string, n: number) => `/api/documents/${id}/pages/${n}.jpg`,
   fileUrl: (id: string) => `/api/documents/${id}/file`,

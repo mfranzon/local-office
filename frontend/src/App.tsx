@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, FileText, Image as ImageIcon, MessageSquare, Settings as SettingsIcon, ShieldCheck, Wand2 } from "lucide-react";
+import { BookOpen, FileText, Image as ImageIcon, MessageSquare, Plug, Settings as SettingsIcon, ShieldCheck, Wand2 } from "lucide-react";
 import { api, type Doc, type Source } from "./api";
 import { useI18n } from "./i18n";
 import DocViewer from "./components/DocViewer";
@@ -28,13 +28,14 @@ function useDocuments() {
 
 function useModelStatus() {
   const [models, setModels] = useState<Record<string, "running" | "ready" | "missing"> | null>(null);
+  const [connected, setConnected] = useState<string[]>([]);
   useEffect(() => {
-    const check = () => api.status().then((s) => setModels(s.models)).catch(() => setModels(null));
+    const check = () => api.status().then((s) => { setModels(s.models); setConnected(s.connected); }).catch(() => setModels(null));
     check();
     const timer = setInterval(check, 15000);
     return () => clearInterval(timer);
   }, []);
-  return models;
+  return { models, connected };
 }
 
 export default function App() {
@@ -53,7 +54,7 @@ function Shell() {
   const [wikiEntity, setWikiEntity] = useState<number | null>(null);
   const [seed, setSeed] = useState<{ text: string } | undefined>();
   const { docs, refresh } = useDocuments();
-  const models = useModelStatus();
+  const { models, connected } = useModelStatus();
 
   // Land on "Ask" once there is something to ask about; first-time users land on the upload screen.
   const [landed, setLanded] = useState(false);
@@ -103,7 +104,12 @@ function Shell() {
             <span className={`w-2 h-2 rounded-full ${allUp ? "bg-emerald-500" : someUp ? "bg-amber-400" : "bg-slate-300 animate-pulse"}`} />
             {allUp ? t("ai_ready") : someUp ? t("ai_partial") : t("ai_starting")}
           </div>
-          <div className="flex gap-2 items-start"><ShieldCheck size={14} className="shrink-0 mt-0.5 text-emerald-600" />{t("privacy")}</div>
+          <div className="flex gap-2 items-start"><ShieldCheck size={14} className="shrink-0 mt-0.5 text-emerald-600" />{t(connected.length ? "privacy_files" : "privacy")}</div>
+          {connected.length > 0 && (
+            <button onClick={() => setView("settings")} className="flex gap-2 items-start text-left text-amber-700 hover:underline">
+              <Plug size={14} className="shrink-0 mt-0.5" />{t("privacy_connected", { names: connected.join(", ") })}
+            </button>
+          )}
           <div className="flex rounded-md border border-slate-200 overflow-hidden w-fit">
             {(["it", "en"] as const).map((l) => (
               <button key={l} onClick={() => setLang(l)}

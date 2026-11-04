@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Check, Download, FileText, Loader2, Plus, Trash2, Wand2, X } from "lucide-react";
+import { BookOpen, Check, Download, FileText, Loader2, Plug, Plus, Trash2, Wand2, X } from "lucide-react";
 import { api, stream, type ChatSummary, type Doc, type ExportFile, type Msg, type Source, type Step } from "../api";
 import { useI18n } from "../i18n";
 import Composer from "../components/Composer";
 import Markdown from "../components/Markdown";
 
-interface Turn extends Msg { sources?: Source[]; error?: string; skill?: string; steps?: Step[]; files?: ExportFile[] }
+interface Turn extends Msg { sources?: Source[]; error?: string; skill?: string; services?: boolean; steps?: Step[]; files?: ExportFile[] }
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
@@ -65,6 +65,7 @@ export default function Ask({ docs, scope, setScope, onSource, seed }: {
         if (e.type === "token") update((l) => ({ ...l, content: l.content + e.text }));
         if (e.type === "error") update((l) => ({ ...l, error: e.message }));
         if (e.type === "skill") update((l) => ({ ...l, skill: e.name, steps: [] }));
+        if (e.type === "services") update((l) => ({ ...l, services: true, steps: [] }));
         if (e.type === "step") update((l) => ({ ...l, steps: [...(l.steps ?? []), { tool: e.tool, detail: e.detail }] }));
         if (e.type === "file") update((l) => ({ ...l, files: [...(l.files ?? []), { name: e.name, url: e.url }] }));
       }
@@ -146,11 +147,17 @@ export default function Ask({ docs, scope, setScope, onSource, seed }: {
               </div>
             ) : (
               <div key={i} className="text-[15px]">
-                {turn.skill && (
+                {(turn.skill || turn.services) && (
                   <div className="mb-3">
-                    <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-violet-50 text-violet-700 font-medium">
-                      <Wand2 size={13} /> {t("using_skill", { name: turn.skill })}
-                    </span>
+                    {turn.skill ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-violet-50 text-violet-700 font-medium">
+                        <Wand2 size={13} /> {t("using_skill", { name: turn.skill })}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md bg-amber-50 text-amber-800 font-medium">
+                        <Plug size={13} /> {t("using_services")}
+                      </span>
+                    )}
                     {!!turn.steps?.length && (
                       <ul className="mt-2 space-y-1 text-sm text-slate-500">
                         {turn.steps.map((st, j) => {
@@ -159,7 +166,9 @@ export default function Ask({ docs, scope, setScope, onSource, seed }: {
                           return (
                             <li key={j} className="flex items-center gap-2 min-w-0">
                               {running ? <Loader2 size={13} className="animate-spin text-accent shrink-0" /> : <Check size={13} className="text-emerald-600 shrink-0" />}
-                              <span className="shrink-0">{t(`step_${st.tool}` as never) || st.tool}</span>
+                              <span className="shrink-0">{st.tool.includes("__")
+                                ? <span className="inline-flex items-center gap-1"><Plug size={12} className="text-amber-700" /> {st.tool.replace("__", " › ")}</span>
+                                : t(`step_${st.tool}` as never) || st.tool}</span>
                               {detail && <span className="truncate text-slate-400">{detail}</span>}
                             </li>
                           );
@@ -192,8 +201,10 @@ export default function Ask({ docs, scope, setScope, onSource, seed }: {
                           className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:border-accent">
                           <span className="w-5 h-5 grid place-items-center rounded bg-accent-soft text-accent text-[11px] font-semibold">{s.n}</span>
                           {s.kind === "wiki" && <BookOpen size={14} className="text-violet-600" />}
+                          {s.kind === "mcp" && <Plug size={14} className="text-amber-700" />}
                           <span className="max-w-56 truncate">{s.name}</span>
-                          {s.kind === "wiki" ? <span className="text-violet-600 text-xs">Wiki</span> : <span className="text-slate-400">p. {s.page}</span>}
+                          {s.kind === "wiki" ? <span className="text-violet-600 text-xs">Wiki</span>
+                            : s.kind === "doc" && <span className="text-slate-400">p. {s.page}</span>}
                         </button>
                       ))}
                     </div>

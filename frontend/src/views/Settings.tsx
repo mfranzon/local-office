@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Cpu, Download, Loader2, ScanText, Search, Sparkles } from "lucide-react";
 import { api, stream, type ModelSettings, type ModelSpec, type Role } from "../api";
 import { useI18n } from "../i18n";
+import Connections from "../components/Connections";
 
 const ROLES = ["assistant", "ocr", "embed", "vision"] as const;
 const ROLE_ICONS = { assistant: Cpu, ocr: ScanText, embed: Search, vision: ScanText } as const;
@@ -182,6 +183,7 @@ export default function Settings() {
           ))}
           {!data && <Loader2 className="animate-spin text-slate-400 mx-auto" />}
         </div>
+        <Connections />
       </div>
     </div>
   );

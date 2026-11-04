@@ -8,7 +8,8 @@ Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photo
 
 - **Documents:** drag & drop PDFs, scans, photos (JPG, PNG, HEIC), TIFF, Word, Excel and text. Digital PDFs use their text layer; scans and photos go through OCR. Tables are kept.
 - **Folders:** connect local or shared folders; they stay in sync, strictly read-only.
-- **Skills:** folders with a `SKILL.md` ([Agent Skills format](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)) that teach the assistant an office task: deadline reports, invoice tables, Word reports. Ask normally and the right skill is picked, or type `/` to choose one. Skills read documents and the wiki and can create Word, Excel or Markdown files; they never send email, delete anything or run scripts. Create your own in the app or import a `SKILL.md` / `.zip`.
+- **Skills:** folders with a `SKILL.md` ([Agent Skills format](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)) that teach the assistant an office task: deadline reports, invoice tables, Word reports, supplier checks. Ask normally and the right skill is picked, or type `/` to choose one. Skills read documents and the wiki and can create Word, Excel or Markdown files; they never send email, delete anything or run scripts. Create your own in the app or import a `SKILL.md` / `.zip`.
+- **Connected services:** connect remote [MCP](https://modelcontextprotocol.io) servers (mail, calendar, CRM, tickets…) in Settings, with an optional access token. The assistant uses them in plain questions and in skills, and cites their results. This is the one feature that sends data off the computer, so it's opt-in: only tools the server marks read-only start on, and you switch on any tool that sends, creates or deletes. Two public services that need no account are one click away: web search (Exa) and Microsoft Office help (Microsoft Learn).
 - **Ask:** answers cite the page they come from; click a citation to open the page. Conversations are saved and can be reopened.
 - **Wiki:** pages for organizations, people and projects, built from the documents. Every fact links to its source page. Conflicting values (e.g. two VAT numbers) and likely duplicates go to a review list. Exports to Obsidian.
 - **Images:** describe photos, read charts, extract tables.
@@ -18,6 +19,27 @@ Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photo
 | A skill at work | Skills | Wiki |
 |---|---|---|
 | ![Invoice table skill](docs/screenshots/skill-run.png) | ![Skills](docs/screenshots/skills.png) | ![Wiki](docs/screenshots/wiki.png) |
+
+## Example: check a supplier before the contract renews
+
+The demo documents (`uv run scripts/make_demo.py`) are what a small studio has on one supplier: a service agreement, two scanned invoices, a purchase order and meeting minutes. With them loaded and Web search connected, ask:
+
+> Check Northwind before we renew the contract
+
+![Supplier check, recorded in the app](docs/demo/supplier-check.gif)
+
+*A real run on an Apple M5 Mac with Qwen3.5 9B. The 83 s wait is sped up 12×. [MP4 version](docs/demo/supplier-check.mp4).*
+
+The **supplier-check** skill reads the wiki page, the contract, the invoices and the order, lists the deadlines, and searches the web once with the company's name only (no amounts, no people). The answer cites every line:
+
+- **Summary:** check first, don't renew yet: the purchase order has a different VAT number than the contract.
+- **Contract:** 15/01/2026 to 31/12/2026, renews automatically unless cancelled in writing by **30/11/2026**, invoices due in 60 days.
+- **Money:** NW-2026-118 €4,000 due 30/11, NW-2026-131 €2,500 due 20/12, PO-7781 €1,700 open.
+- **Deadlines:** delivery 10/11, cancellation and payment 30/11, all within the month.
+- **Issues to check:** VAT GB 284 7391 **56** (contract) vs GB 284 7391 **65** (order), and "Northwind Components Ltd" vs "Northwind Ltd".
+- **Public news:** none for this company. The web hits were about a different "North Wind", so they're left out.
+
+This is what Local Office is for: the facts come from files that never leave the Mac, and the only thing sent outside is one search for a company name. Without a connected service, the skill does the same check on the documents alone.
 
 ## Install
 
