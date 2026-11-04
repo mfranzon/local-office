@@ -98,13 +98,14 @@ def test_recoverable_error_is_drained_and_reuses_worker_with_glued_stdout(protoc
 
 def test_progress_resets_idle_deadline(protocol, monkeypatch):
     lines, proc, _, stop = protocol
-    lines.extend(['LO_EVENT:{"type":"progress"}\n'] * 8 + [
+    lines.extend(['LO_EVENT:{"type":"progress"}\n'] * 10 + [
         'LO_EVENT:{"type":"message","message":{"content":"OK"}}\n', 'LO_EVENT:{"type":"done"}\n'])
     def readline():
-        time.sleep(.02)
+        time.sleep(.05)
         return lines.popleft()
     proc.stdout.readline = readline
-    monkeypatch.setattr(npu, "IDLE_TIMEOUT", .1)
+    # 10x headroom per event (slow CI runners), while the whole request (~0.6 s) still exceeds the deadline.
+    monkeypatch.setattr(npu, "IDLE_TIMEOUT", .5)
     async def run():
         return await npu.complete(models.Spec("assistant", "test", "model"), [])
     assert asyncio.run(run())["content"] == "OK"
