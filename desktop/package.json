@@ -1,0 +1,10 @@
+{
+  "name": "local-office-snapdragon-desktop",
+  "private": true,
+  "version": "0.3.0",
+  "description": "Optional Windows ARM64 desktop host for Local Office",
+  "main": "main.cjs",
+  "devDependencies": {
+    "electron": "45.2.1"
+  }
+}

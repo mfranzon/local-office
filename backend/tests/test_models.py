@@ -10,7 +10,8 @@ from app import models
     (8, "Qwen3.5 2B", "EmbeddingGemma 300M"),
     (0, "Qwen3.5 4B", "Qwen3 Embedding 0.6B"),   # RAM unknown: assume 16 GB
 ])
-def test_recommended_model_fits_the_mac(ram, assistant, embed):
+def test_recommended_model_fits_the_mac(ram, assistant, embed, monkeypatch):
+    monkeypatch.setattr(models, "CATALOG", models.LLAMA_CATALOG)
     assert models.recommended("assistant", ram).name == assistant
     assert models.recommended("embed", ram).name == embed
     assert models.recommended("ocr", ram).role == "ocr"

@@ -125,6 +125,13 @@ Build the installer on Windows with uv, Node 22 and [Inno Setup 6](https://jrsof
 packaging\build_windows.ps1    # -> dist\LocalOffice-Setup.exe; LLAMA_WIN_BACKEND=vulkan or cpu for a smaller build
 ```
 
+## Optional Windows ARM64 (Snapdragon)
+
+An additional NPU backend and source-checkout launcher are available for Snapdragon X Elite.
+See [Snapdragon setup and architecture](docs/snapdragon.md) for installation, model choices,
+backend differences and validation limits. The Mac app and existing Windows x64 installer
+keep their current entry points and build workflows.
+
 ## Status
 
 Early stage, tested on Apple M5 with 24 GB. Small local models make mistakes: answers cite their sources so they can be checked, and wiki facts can be rejected or edited.

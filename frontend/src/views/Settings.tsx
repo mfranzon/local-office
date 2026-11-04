@@ -3,8 +3,8 @@ import { AlertCircle, CheckCircle2, Cpu, Download, Loader2, ScanText, Search, Sp
 import { api, stream, type ModelSettings, type ModelSpec, type Role } from "../api";
 import { useI18n } from "../i18n";
 
-const ROLES = ["assistant", "ocr", "embed"] as const;
-const ROLE_ICONS = { assistant: Cpu, ocr: ScanText, embed: Search } as const;
+const ROLES = ["assistant", "ocr", "embed", "vision"] as const;
+const ROLE_ICONS = { assistant: Cpu, ocr: ScanText, embed: Search, vision: ScanText } as const;
 const STEPS = ["pull", "configure", "test", "reindex"] as const;
 type Step = (typeof STEPS)[number];
 
@@ -72,7 +72,7 @@ function RoleCard({ role, data, ramGb, diskGb, run, busy, onSwitch }: {
 
       <div className="divide-y divide-slate-100 border-t border-slate-100">
         {data.choices.map((spec) => <Option key={spec.ref} spec={spec} />)}
-        <div className={`px-4 py-3 ${selected === "custom" ? "bg-accent-soft/50" : ""}`}>
+        {(!data.active.provider || data.active.provider === "llama") && <div className={`px-4 py-3 ${selected === "custom" ? "bg-accent-soft/50" : ""}`}>
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="radio" name={role} checked={selected === "custom"} onChange={() => setSelected("custom")} disabled={!!running} className="accent-[#2f5bd3] w-4 h-4" />
             <span className="font-medium">{t("custom_model")}</span>
@@ -82,7 +82,7 @@ function RoleCard({ role, data, ramGb, diskGb, run, busy, onSwitch }: {
             <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={t("custom_hint")} disabled={!!running}
               className="mt-2 ml-7 w-[calc(100%-1.75rem)] px-3 py-2 rounded-lg border border-slate-200 text-sm font-mono outline-none focus:border-accent" />
           )}
-        </div>
+        </div>}
       </div>
 
       {(changed || run) && (
@@ -154,7 +154,7 @@ export default function Settings() {
     refresh();
   };
 
-  const differs = data ? ROLES.filter((r) => norm(data[r].active.ref) !== data[r].recommended) : [];
+  const differs = data ? ROLES.filter((r) => data[r] && norm(data[r].active.ref) !== data[r].recommended) : [];
   const useRecommended = async () => {
     for (const role of differs) await switchModel(role, data![role].recommended);   // one at a time: each is downloaded and tested
   };
@@ -176,7 +176,7 @@ export default function Settings() {
           </div>
         )}
         <div className="mt-6 space-y-5">
-          {data && ROLES.map((role) => (
+          {data && ROLES.filter((role) => data[role]).map((role) => (
             <RoleCard key={role} role={role} data={data[role]} ramGb={data.ram_gb} diskGb={data.disk_free_gb} run={runs[role] ?? null} busy={busy}
               onSwitch={(ref) => switchModel(role, ref)} />
           ))}

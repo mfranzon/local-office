@@ -194,6 +194,10 @@ def running() -> dict[str, bool]:
 async def reaper():
     while True:
         await asyncio.sleep(60)
+        from .config import SNAPDRAGON
+        if SNAPDRAGON:
+            from . import npu
+            await npu.reap()
         now = time.monotonic()
         for role, srv in list(_servers.items()):
             if now - srv.last_used > IDLE_SECONDS:
@@ -201,6 +205,10 @@ async def reaper():
 
 
 def shutdown():
+    from .config import SNAPDRAGON
+    if SNAPDRAGON:
+        from . import npu
+        npu.shutdown()
     for srv in _servers.values():
         stop(srv)
     _servers.clear()

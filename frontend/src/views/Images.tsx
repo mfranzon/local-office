@@ -29,7 +29,7 @@ export default function Images({ refreshDocs }: { refreshDocs: () => void }) {
     return () => { window.removeEventListener("paste", paste); window.removeEventListener("dragover", over); window.removeEventListener("drop", drop); };
   }, []);
 
-  const send = async (question: string) => {
+  const send = async (question: string, mode: "vision" | "ocr" | "table" = "vision") => {
     if (!file) return;
     const history: Msg[] = [...turns.map(({ role, content }) => ({ role, content })), { role: "user", content: question }];
     setTurns([...history, { role: "assistant", content: "" }]);
@@ -38,6 +38,7 @@ export default function Images({ refreshDocs }: { refreshDocs: () => void }) {
     const form = new FormData();
     form.append("image", file);
     form.append("messages", JSON.stringify(history));
+    form.append("mode", mode);
     const update = (fn: (c: Msg & { error?: string }) => Msg & { error?: string }) =>
       setTurns((ts) => [...ts.slice(0, -1), fn(ts[ts.length - 1])]);
     try {
@@ -58,10 +59,10 @@ export default function Images({ refreshDocs }: { refreshDocs: () => void }) {
   };
 
   const actions = [
-    [t("qa_describe"), t("p_describe"), Sparkles],
-    [t("qa_text"), t("p_text"), ScanText],
-    [t("qa_table"), t("p_table"), Table],
-    [t("qa_chart"), t("p_chart"), BarChart3],
+    [t("qa_describe"), t("p_describe"), Sparkles, "vision"],
+    [t("qa_text"), t("p_text"), ScanText, "ocr"],
+    [t("qa_table"), t("p_table"), Table, "table"],
+    [t("qa_chart"), t("p_chart"), BarChart3, "vision"],
   ] as const;
 
   const chooser = (
@@ -104,8 +105,8 @@ export default function Images({ refreshDocs }: { refreshDocs: () => void }) {
       <div className="flex flex-col min-h-0">
         <div className="flex-1 overflow-auto px-6 py-6 space-y-5">
           <div className="flex flex-wrap gap-2">
-            {actions.map(([label, prompt, Icon]) => (
-              <button key={label} onClick={() => send(prompt)} disabled={busy}
+            {actions.map(([label, prompt, Icon, mode]) => (
+              <button key={label} onClick={() => send(prompt, mode)} disabled={busy}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm hover:border-accent hover:text-accent disabled:opacity-40">
                 <Icon size={16} /> {label}
               </button>

@@ -2,7 +2,7 @@
 import re
 
 from . import llm
-from .db import db, vec
+from .db import db, nearest
 
 CANDIDATES = 40
 RRF_K = 60
@@ -26,9 +26,7 @@ async def search(question: str, doc_ids: list[str] | None = None, k: int = 8) ->
     [qv] = await llm.embed([question], query=True)
     ranks: dict[int, float] = {}
     with db() as conn:
-        vec_rows = conn.execute(
-            "SELECT rowid FROM vec_chunks WHERE embedding MATCH ? AND k = ? ORDER BY distance",
-            (vec(qv), CANDIDATES * (4 if doc_ids else 1))).fetchall()
+        vec_rows = nearest(conn, qv, CANDIDATES, doc_ids)
         fts_rows = []
         if fq := _fts_query(question):
             fts_rows = conn.execute("SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ? ORDER BY rank LIMIT ?",

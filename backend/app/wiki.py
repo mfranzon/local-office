@@ -13,10 +13,11 @@ from datetime import date
 
 from . import llm
 from .db import db
+from .config import SNAPDRAGON
 
 log = logging.getLogger(__name__)
 
-WINDOW_CHARS = 9000          # ~2.5k tokens of document text per extraction call
+WINDOW_CHARS = 3500 if SNAPDRAGON else 9000
 MAX_WINDOWS = 12
 IDENTIFIERS = ("vat_id", "tax_code", "iban", "email", "phone")
 HONORIFICS = {"mr", "mrs", "ms", "miss", "dr", "prof", "sig", "sigra", "signa", "dott", "dottssa", "ing", "avv", "geom", "rag"}
@@ -69,6 +70,9 @@ SYSTEM = """You maintain an office knowledge base. Read the document and fill th
   If the year is missing, use the document's year.
 - Use only what is written; never guess. Dates as YYYY-MM-DD. Write summary and "what" in the document's language.
   page = page number of the fact. summary = 2 sentences about the document."""
+
+if SNAPDRAGON:
+    SYSTEM += "\nPut role on the entity itself, never inside facts. Facts may be an empty array."
 
 SUMMARY_SYSTEM = """Write a 2-3 sentence overview of this entity for an office wiki, using ONLY the facts given.
 Write in the same language as the facts. No preamble, no lists, no citations."""
@@ -134,11 +138,20 @@ def slugify(name: str) -> str:
 def _windows(pages: list[dict]) -> list[str]:
     out, cur = [], ""
     for p in pages:
-        block = f"=== Page {p['n']} ===\n{p['text'][:WINDOW_CHARS]}\n\n"
-        if cur and len(cur) + len(block) > WINDOW_CHARS:
-            out.append(cur)
-            cur = ""
-        cur += block
+        if not SNAPDRAGON:
+            block = f"=== Page {p['n']} ===\n{p['text'][:WINDOW_CHARS]}\n\n"
+            if cur and len(cur) + len(block) > WINDOW_CHARS:
+                out.append(cur)
+                cur = ""
+            cur += block
+            continue
+        width = WINDOW_CHARS - 40
+        for offset in range(0, max(1, len(p["text"])), width):
+            block = f"=== Page {p['n']} ===\n{p['text'][offset:offset + width]}\n\n"
+            if cur and len(cur) + len(block) > WINDOW_CHARS:
+                out.append(cur)
+                cur = ""
+            cur += block
     return (out + [cur] if cur.strip() else out)[:MAX_WINDOWS]
 
 
