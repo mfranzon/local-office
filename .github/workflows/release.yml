@@ -1,8 +1,9 @@
 name: Release
 
-# Push a tag (v0.3.0) to build the .dmg and the Windows installer and attach them to its GitHub release,
-# or run it by hand to rebuild them for an existing tag. Linux: build from source (README).
-# Pull requests that change the packaging build both without releasing anything.
+# Push a tag (v0.3.0) to build the .dmg, the Windows installer and the Linux .deb and attach them to its GitHub
+# release, or run it by hand to rebuild them for an existing tag. The .deb's llama-server is CPU-only (no CUDA on the
+# runner); build it from source for an NVIDIA GPU (README). Pull requests that change the packaging build all three
+# without releasing anything.
 on:
   push:
     tags: ["v*"]
@@ -59,9 +60,26 @@ jobs:
           name: exe
           path: dist/LocalOffice-Setup.exe
 
+  deb:
+    runs-on: ubuntu-24.04   # build_deb.sh targets Ubuntu 24.04's Python 3.12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ninja-build
+      - run: packaging/build_deb.sh   # CPU-only llama-server: no CUDA toolkit here, so build_llama.sh skips GPU support
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: dist/local-office_*_amd64.deb
+
   release:
     if: github.event_name != 'pull_request'
-    needs: [dmg, exe]
+    needs: [dmg, exe, deb]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

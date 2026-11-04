@@ -106,7 +106,11 @@ scripts/         sample and demo document generators
 
 ## Linux (Ubuntu 24.04)
 
-There is no Linux package: build it from source. Tested on Ubuntu 24.04 with an NVIDIA RTX 3060 (6 GB).
+**local-office_&lt;version&gt;_amd64.deb** on [Releases](https://github.com/mfranzon/local-office/releases) installs the app
+with `sudo apt install ./local-office_*_amd64.deb`. **It runs on the CPU only:** it does not use the GPU, even when an
+NVIDIA card is present, so answers are noticeably slower. For GPU acceleration (CUDA), build from source as below.
+
+Build from source: tested on Ubuntu 24.04 with an NVIDIA RTX 3060 (6 GB).
 
 ```bash
 # 1. Build tools, the window's GTK/WebKit, and CUDA (skip nvidia-cuda-toolkit and g++-12 without an NVIDIA GPU)

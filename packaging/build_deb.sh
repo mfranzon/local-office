@@ -47,7 +47,10 @@ INI
 # CUDA runtime libraries from Ubuntu's archive when llama-server was built with CUDA; the NVIDIA driver is not
 # a dependency (installed separately, any version supporting the toolkit)
 DEPENDS="python3.12, python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1"
-ldd "$OPT/build/bin/llama-server" | grep -q libcudart && DEPENDS+=", libcudart12, libcublas12, libcublaslt12"
+ACCEL=" This build runs the models on the CPU only and does not use the GPU; for NVIDIA GPU\n acceleration, build from source: https://github.com/mfranzon/local-office#linux-ubuntu-2404"
+if ldd "$OPT/build/bin/llama-server" | grep -q libcudart; then
+  DEPENDS+=", libcudart12, libcublas12, libcublaslt12"; ACCEL=" This build uses an NVIDIA GPU through CUDA."
+fi
 cat > "$PKG/DEBIAN/control" <<CTRL
 Package: local-office
 Version: $VERSION
@@ -60,6 +63,8 @@ Installed-Size: $(du -sk "$PKG" | cut -f1)
 Description: Private AI for the office
  Ask questions about scans, PDFs and Office files and get answers that cite the page.
  Models run on this computer; no file leaves it.
+ .
+$(printf "$ACCEL")
 CTRL
 
 rm -f "$OPT/venv/.lock"; chmod -R u+rwX,go+rX,go-w "$PKG"   # uv keeps its cache's permissions
