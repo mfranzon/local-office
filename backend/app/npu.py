@@ -50,8 +50,8 @@ def model_path(spec):
 def have(spec):
     path = model_path(spec)
     if spec.provider == "aihub":
-        from .provision import verified_install, NOMIC_SHA256
-        return (verified_install(path / "source.json", NOMIC_SHA256)
+        from .provision import installed
+        return (installed(path, "nomic")
                 and any(path.rglob("*.onnx")) and any(path.rglob("tokenizer.json")))
     if spec.provider == "geniex-qairt":
         manifest = path / "geniex.json"

@@ -246,8 +246,6 @@ def test_request_validation_error_is_nonfatal_and_next_request_runs(model, monke
 def test_archive_pin_rejects_changed_bytes_and_existing_runtime_without_marker(tmp_path, monkeypatch):
     archive = tmp_path / "runtime.zip"
     archive.write_bytes(b"tampered")
-    with pytest.raises(RuntimeError, match="SHA256 mismatch"):
-        provision.verify_archive(archive, provision.RUNTIME_SHA256)
     monkeypatch.setattr(provision, "REPO", tmp_path)
     installed = tmp_path / "build/geniex/lib/geniex.dll"
     installed.parent.mkdir(parents=True)
@@ -257,6 +255,15 @@ def test_archive_pin_rejects_changed_bytes_and_existing_runtime_without_marker(t
     with pytest.raises(RuntimeError, match="SHA256 mismatch"):
         provision.install_runtime()
     assert not provision.extract.called
+    assert not archive.exists()  # A bad cached archive is discarded so a retry downloads again.
+
+
+def test_install_marker_tracks_the_pinned_digest(tmp_path, monkeypatch):
+    assert not provision.installed(tmp_path, "nomic")
+    provision.mark_installed(tmp_path, "nomic")
+    assert provision.installed(tmp_path, "nomic")
+    monkeypatch.setitem(provision.ASSETS, "nomic", provision.ASSETS["nomic"]._replace(sha256="0" * 64))
+    assert not provision.installed(tmp_path, "nomic")  # Bumping a pin invalidates older installs.
 
 
 def test_nomic_archive_is_verified_before_extraction(tmp_path, monkeypatch):

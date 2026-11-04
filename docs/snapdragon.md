@@ -58,8 +58,9 @@ cache, and runtime files in `build/geniex/`. These are excluded from Git. Docume
 stay on the computer. Setup and model downloads require an internet connection;
 normal inference uses local files. The preinstalled GenieX CLI is not modified.
 
-The runtime ZIP and AI Hub Nomic ZIP are checked against SHA-256 constants
-committed in `backend/app/provision.py` before extraction. The runtime pin is
+The runtime ZIP and AI Hub Nomic ZIP are checked against the SHA-256 pins in
+the `ASSETS` table in `backend/app/provision.py` before extraction; an archive
+that fails the check is deleted so the next setup downloads it again. The runtime pin is
 the v0.10.0 GitHub release asset digest; the Nomic pin covers the v0.65.0 ONNX
 archive. Setup revalidates older installs lacking the verification marker.
 Failed downloads cancel queued chunks and retain resumable progress.

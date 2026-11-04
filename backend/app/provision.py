@@ -9,30 +9,55 @@ import subprocess
 import sys
 import threading
 import time
+from typing import NamedTuple
 import urllib.request
 import zipfile
 
 from .config import REPO, NO_WINDOW
 
-NOMIC_URL = "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/nomic_embed_text/releases/v0.65.0/nomic_embed_text-onnx-float.zip"
-# Reviewed pins: GenieX release asset digest and the AI Hub v0.65.0 archive.
-RUNTIME_SHA256 = "410dc39e79a6d0b7e8991bd4267285f7c73de7c46511a1fe0549b83dc4a26e4e"
-NOMIC_SHA256 = "67d7efd4841602a4a4d51339c71d8cfd6bff12da69fafa4b086836092458b1f0"
+
+class Asset(NamedTuple):
+    url: str
+    sha256: str
+    file: str
+
+
+# Reviewed pins: change a URL and its digest together. The runtime digest is the
+# GitHub release asset digest; the Nomic digest covers the AI Hub v0.65.0 archive.
+ASSETS = {
+    "runtime": Asset("https://github.com/qualcomm/GenieX/releases/download/v0.10.0/geniex-sdk-windows-arm64-v0.10.0.zip",
+                     "410dc39e79a6d0b7e8991bd4267285f7c73de7c46511a1fe0549b83dc4a26e4e",
+                     "geniex-sdk-windows-arm64-v0.10.0.zip"),
+    "nomic": Asset("https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/nomic_embed_text/releases/v0.65.0/nomic_embed_text-onnx-float.zip",
+                   "67d7efd4841602a4a4d51339c71d8cfd6bff12da69fafa4b086836092458b1f0",
+                   "nomic-embed-text-v0.65.0.zip"),
+}
 _install_lock = threading.Lock()
 
 
-def verify_archive(path, expected):
-    with Path(path).open("rb") as file:
+def fetch(name):
+    """Download a pinned asset; a cached archive that fails the check is discarded."""
+    asset = ASSETS[name]
+    archive = download(asset.url, REPO / "build/downloads" / asset.file)
+    with archive.open("rb") as file:
         actual = hashlib.file_digest(file, "sha256").hexdigest()
-    if actual != expected:
-        raise RuntimeError(f"SHA256 mismatch for {Path(path).name}; remove the cached archive and retry setup")
+    if actual != asset.sha256:
+        archive.unlink()
+        raise RuntimeError(f"SHA256 mismatch for {asset.file}; the download was discarded, retry setup")
+    return archive
 
 
-def verified_install(path, expected):
+def installed(directory, name):
+    """True when the directory was populated from the currently pinned asset."""
     try:
-        return json.loads(Path(path).read_text()).get("sha256") == expected
+        return json.loads((Path(directory) / "source.json").read_text()).get("sha256") == ASSETS[name].sha256
     except (OSError, ValueError, AttributeError):
         return False
+
+
+def mark_installed(directory, name):
+    asset = ASSETS[name]
+    (Path(directory) / "source.json").write_text(json.dumps({"source": asset.url, "sha256": asset.sha256}))
 
 
 def download(url, dest):
@@ -131,18 +156,14 @@ def extract(archive, destination):
 
 def install_runtime():
     target = REPO / "build/geniex/lib"
-    marker = target.parent / "source.json"
-    if (target / "geniex.dll").is_file() and verified_install(marker, RUNTIME_SHA256):
+    if (target / "geniex.dll").is_file() and installed(target.parent, "runtime"):
         return
-    name = "geniex-sdk-windows-arm64-v0.10.0.zip"
-    url = "https://github.com/qualcomm/GenieX/releases/download/v0.10.0/" + name
-    archive = download(url, REPO / "build/downloads" / name)
-    verify_archive(archive, RUNTIME_SHA256)
+    archive = fetch("runtime")
     unpack = REPO / "build/geniex-sdk"
     extract(archive, unpack)
     lib = next(unpack.rglob("geniex.dll")).parent
     shutil.copytree(lib, target, dirs_exist_ok=True)
-    marker.write_text(json.dumps({"source": url, "sha256": RUNTIME_SHA256}))
+    mark_installed(target.parent, "runtime")
 
 
 def install_model(spec):
@@ -153,13 +174,11 @@ def install_model(spec):
         if have(spec):
             return
         if spec.provider == "aihub":
-            archive = download(NOMIC_URL, REPO / "build/downloads/nomic-embed-text-v0.65.0.zip")
-            verify_archive(archive, NOMIC_SHA256)
-            extract(archive, EMBED_DIR)
+            extract(fetch("nomic"), EMBED_DIR)
             if not any(EMBED_DIR.rglob("tokenizer.json")):
                 from huggingface_hub import hf_hub_download
                 shutil.copy(hf_hub_download("google-bert/bert-base-uncased", "tokenizer.json"), EMBED_DIR / "tokenizer.json")
-            (EMBED_DIR / "source.json").write_text(json.dumps({"source": NOMIC_URL, "version": "0.65.0", "sha256": NOMIC_SHA256}))
+            mark_installed(EMBED_DIR, "nomic")
         else:
             # A subprocess keeps native SDK initialization out of the API server.
             env = os.environ.copy()
