@@ -3,331 +3,469 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Local Office: private AI for your office documents</title>
-<meta name="description" content="Ask questions about scans, PDFs and Office files and get answers that cite the exact page. The AI runs on your computer; no file leaves it. For Mac, Windows and Linux.">
+<title>Local Office: private AI for office paperwork</title>
+<meta name="description" content="Ask questions about scans, PDFs and Office files and get answers that cite the exact page. The AI runs on your computer and no file leaves it. Free for Mac, Windows and Linux.">
 <meta property="og:title" content="Local Office">
-<meta property="og:description" content="Private AI for the office. Answers cite the exact page, and no file leaves your computer.">
+<meta property="og:description" content="Private AI for office paperwork. Answers cite the exact page, and no file leaves your computer.">
 <meta property="og:image" content="screenshots/ask.png">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect x='10' y='10' width='80' height='80' rx='19' fill='%232f5bd3'/%3E%3Cpath d='M33 25h26l11 11v42H33z' fill='white'/%3E%3Cpath d='M59 25l11 11H59z' fill='%23bec' /%3E%3Crect x='39' y='45' width='25' height='3' rx='1.5' fill='%232f5bd3'/%3E%3Crect x='39' y='53' width='25' height='3' rx='1.5' fill='%232f5bd3'/%3E%3Crect x='39' y='61' width='25' height='3' rx='1.5' fill='%232f5bd3'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=gambarino@400&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js')</script>
 <style>
   :root {
+    /* Carbonless office forms: white, yellow and pink copies, black ink, the app's own blue for actions. */
+    --paper: #ffffff;
+    --yellow: #ffd249;
+    --pink: #ffc4ef;
+    --cyan: #a4f6f8;
+    --orange: #f9a21f;
+    --ink: #0a0a0a;
+    --muted: #4a3d10;
     --accent: #2f5bd3;
-    --accent-ink: #1f46b0;
-    --accent-soft: #e8eefc;
-    --bg: #ffffff;
-    --bg-alt: #f6f7f9;
-    --ink: #1d2330;
-    --ink-2: #4a5468;
-    --ink-3: #7a8396;
-    --line: #e3e7ee;
-    --card: #ffffff;
-    --ok: #12805c;
-    --warn: #a15c07;
-    --shadow: 0 1px 2px rgba(20, 30, 60, .06), 0 12px 40px -12px rgba(20, 30, 60, .18);
-    --radius: 14px;
-    --sans: ui-sans-serif, -apple-system, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --accent: #6d8ff0; --accent-ink: #9bb3ff; --accent-soft: #1b2645;
-      --bg: #0f131b; --bg-alt: #151a24; --ink: #e8ebf2; --ink-2: #b3bbcb; --ink-3: #8790a3;
-      --line: #262d3b; --card: #171d28; --ok: #4cc79a; --warn: #e3a24a;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 40px -12px rgba(0,0,0,.6);
-    }
-  }
-  :root[data-theme="dark"] {
-    --accent: #6d8ff0; --accent-ink: #9bb3ff; --accent-soft: #1b2645;
-    --bg: #0f131b; --bg-alt: #151a24; --ink: #e8ebf2; --ink-2: #b3bbcb; --ink-3: #8790a3;
-    --line: #262d3b; --card: #171d28; --ok: #4cc79a; --warn: #e3a24a;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 40px -12px rgba(0,0,0,.6);
+    --accent-hover: #2149b4;
+    --accent-ink: #ffffff;
+
+    --font-display: "Gambarino", Georgia, serif;
+    --font-text: "General Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    --step-small: clamp(0.8125rem, 0.79rem + 0.1vw, 0.875rem);
+    --step-body: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
+    --step-lead: clamp(1.25rem, 1.1rem + 0.7vw, 1.625rem);
+    --step-head: clamp(2rem, 1.3rem + 3.2vw, 4rem);
+    --step-display: clamp(2.75rem, 1rem + 6vw, 8.5rem);
+
+    --margin: clamp(1rem, 2.2vw, 2rem);
+    --gutter: clamp(1rem, 2vw, 2rem);
+    --section: clamp(5rem, 9vw, 8rem);
+
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-soft: cubic-bezier(0.33, 1, 0.68, 1);
   }
 
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 var(--sans); }
-  img, video { max-width: 100%; display: block; }
-  a { color: var(--accent-ink); }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
-  @media (min-width: 720px) { .wrap { padding: 0 32px; } }
-  section { padding: 88px 0; }
-  .alt { background: var(--bg-alt); border-block: 1px solid var(--line); }
-  h1, h2, h3 { line-height: 1.15; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
-  h2 { font-size: clamp(28px, 4vw, 40px); }
-  h3 { font-size: 18px; letter-spacing: -.01em; }
-  p { margin: 0; }
-  .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); margin-bottom: 12px; }
-  .lede { color: var(--ink-2); font-size: 18px; max-width: 640px; margin-top: 16px; text-wrap: pretty; }
-  .center { text-align: center; } .center .lede { margin-inline: auto; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-text); font-size: var(--step-body); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3, p, figure, blockquote, ul, ol, dl, dd { margin: 0; }
+  img, video { display: block; max-width: 100%; height: auto; }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+  :target { scroll-margin-top: 1rem; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 1em; }
 
-  /* nav */
-  nav { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: saturate(1.4) blur(12px); border-bottom: 1px solid var(--line); }
-  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; gap: 16px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--ink); text-decoration: none; letter-spacing: -.01em; }
-  .brand svg { width: 28px; height: 28px; }
-  .navlinks { display: flex; gap: 24px; align-items: center; font-size: 15px; }
-  .navlinks a { color: var(--ink-2); text-decoration: none; }
-  .navlinks a:hover { color: var(--ink); }
-  .navlinks .hide-sm { display: none; }
-  @media (min-width: 720px) { .navlinks .hide-sm { display: inline; } }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 400; text-wrap: balance; }
+  .display { font-size: var(--step-display); line-height: 0.92; letter-spacing: -0.02em; }
+  .head { font-size: var(--step-head); line-height: 0.98; letter-spacing: -0.02em; }
+  .lead { font-size: var(--step-lead); line-height: 1.35; }
+  .small { font-size: var(--step-small); line-height: 1.45; }
+  p { max-width: 62ch; text-wrap: pretty; }
+  b, strong { font-weight: 500; }
+  .nums { font-variant-numeric: tabular-nums; }
 
-  /* buttons */
-  .btn { display: inline-flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 10px; font-weight: 600; font-size: 15px; text-decoration: none; border: 1px solid transparent; transition: transform .12s, background .12s; }
-  .btn:active { transform: translateY(1px); }
-  .btn-primary { background: var(--accent); color: #fff; }
-  .btn-primary:hover { background: color-mix(in srgb, var(--accent) 88%, black); }
-  .btn-ghost { background: var(--card); color: var(--ink); border-color: var(--line); }
-  .btn-ghost:hover { border-color: var(--ink-3); }
-  .btn svg { width: 18px; height: 18px; flex: none; }
-  .btn-sm { padding: 8px 14px; font-size: 14px; }
+  .wrap { padding-inline: var(--margin); }
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gutter); }
+  .side { grid-column: 1 / 6; }
+  .main { grid-column: 6 / 13; }
+  @media (max-width: 860px) { .side, .main { grid-column: 1 / -1; } .inside .side, .get .side { order: 2; } }
 
-  /* hero */
-  .hero { padding: 72px 0 0; overflow: hidden; }
-  .hero h1 { font-size: clamp(38px, 6.4vw, 68px); letter-spacing: -.035em; max-width: 900px; margin-inline: auto; }
-  .hero h1 em { font-style: normal; color: var(--accent); }
-  .hero .lede { font-size: clamp(17px, 2vw, 20px); }
-  .cta { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 32px; }
-  .cta-note { margin-top: 14px; font-size: 14px; color: var(--ink-3); }
-  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-size: 14px; font-weight: 500; margin-bottom: 24px; }
-  .pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .button { display: inline-flex; align-items: center; justify-content: center; gap: 0.6rem; min-height: 3.25rem; padding: 0 1.5rem; background: var(--accent); color: var(--accent-ink); text-decoration: none; font-weight: 500; white-space: nowrap; transition: transform 140ms var(--ease-out), background-color 180ms ease; }
+  .button svg { width: 1.1em; height: 1.1em; flex: none; transition: transform 240ms var(--ease-out); }
+  .button:active { transform: scale(0.97); }
+  .link { text-decoration: underline; text-underline-offset: 0.22em; text-decoration-thickness: 0.07em; transition: text-decoration-color 180ms ease, opacity 180ms ease; }
+  @media (hover: hover) and (pointer: fine) {
+    .button:hover { background: var(--accent-hover); }
+    .button:hover svg { transform: translateY(2px); }
+    .link:hover { text-decoration-color: transparent; }
+  }
 
-  .window { margin: 56px auto 0; max-width: 1040px; border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0; background: var(--card); box-shadow: var(--shadow); overflow: hidden; }
-  .window .bar { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg-alt); }
-  .window .bar span { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
-  .window .bar span:nth-child(1) { background: #ff5f57; } .window .bar span:nth-child(2) { background: #febc2e; } .window .bar span:nth-child(3) { background: #28c840; }
+  /* ---------- nav + hero ---------- */
+  .hero { background: var(--yellow); padding-bottom: clamp(4rem, 9vw, 8rem); }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; min-height: 4.5rem; }
+  .brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 500; text-decoration: none; }
+  .brand svg { width: 2rem; height: 2rem; }
+  .bar nav { display: flex; align-items: center; gap: clamp(1rem, 2.4vw, 2.25rem); }
+  .bar nav a:not(.button) { text-decoration: none; transition: opacity 180ms ease; }
+  .bar nav a:not(.button):hover { opacity: 0.6; }
+  .bar .button { min-height: 2.75rem; padding: 0 1.1rem; }
+  @media (max-width: 760px) { .bar nav a:not(.button) { display: none; } }
 
-  /* privacy strip */
-  .strip { display: grid; gap: 1px; background: var(--line); border-block: 1px solid var(--line); grid-template-columns: 1fr; }
-  @media (min-width: 720px) { .strip { grid-template-columns: repeat(4, 1fr); } }
-  .strip div { background: var(--bg); padding: 28px 24px; }
-  .strip b { display: block; font-size: 26px; letter-spacing: -.02em; }
-  .strip span { color: var(--ink-2); font-size: 14px; }
+  .mosaic { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); height: clamp(15rem, 40svh, 30rem); margin-inline: calc(var(--margin) * -1); }
+  .mosaic > * { overflow: hidden; position: relative; min-width: 0; }
+  .mosaic img { width: 100%; height: 100%; object-fit: cover; }
+  .m-ask { grid-column: span 3; background: #f5f6f8; }
+  .m-ask img { object-position: 100% 0; transform-origin: 96% 12%; transform: scale(1.32); }
+  .m-scan img { object-position: 0 4%; }
+  .m-wiki img { object-position: 64% 0; transform-origin: 60% 0; transform: scale(1.5); }
+  .m-fact { background: var(--pink); display: flex; flex-direction: column; justify-content: flex-end; padding: clamp(1rem, 2vw, 1.75rem); }
+  .m-fact p { font-family: var(--font-display); font-size: var(--step-lead); line-height: 1.1; max-width: 12ch; }
+  @media (max-width: 760px) {
+    .mosaic { grid-template-columns: 1fr 1fr; grid-template-rows: 1.25fr 1fr; height: 42svh; }
+    .m-ask { grid-column: span 2; }
+    .m-wiki { display: none; }
+  }
 
-  /* features */
-  .grid { display: grid; gap: 16px; margin-top: 48px; grid-template-columns: 1fr; }
-  @media (min-width: 640px) { .grid { grid-template-columns: repeat(2, 1fr); } }
-  @media (min-width: 960px) { .grid { grid-template-columns: repeat(3, 1fr); } }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
-  .card .ic { width: 40px; height: 40px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); display: grid; place-items: center; margin-bottom: 16px; }
-  .card .ic svg { width: 22px; height: 22px; }
-  .card p { color: var(--ink-2); margin-top: 8px; font-size: 15px; }
+  .masthead { padding-top: clamp(1.75rem, 3vw, 2.5rem); row-gap: 2rem; align-items: end; }
+  .masthead h1 { max-width: 9.5em; }
+  .masthead .standfirst { margin-top: 2rem; max-width: 40ch; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; margin-top: 1.75rem; }
+  .masthead .side { align-self: end; display: grid; gap: 0.35rem; padding-bottom: 0.4rem; }
+  .masthead .side p { max-width: 30ch; }
+  @media (max-width: 860px) { .masthead .side { order: 2; } }
 
-  /* showcase rows */
-  .row { display: grid; gap: 40px; align-items: center; margin-top: 72px; grid-template-columns: 1fr; }
-  @media (min-width: 900px) { .row { grid-template-columns: 5fr 7fr; gap: 64px; } .row.flip > :first-child { order: 2; } }
-  .row ul { list-style: none; padding: 0; margin: 20px 0 0; display: grid; gap: 10px; }
-  .row li { display: flex; gap: 10px; color: var(--ink-2); }
-  .row li::before { content: ""; flex: none; width: 18px; height: 18px; margin-top: 3px; border-radius: 50%; background: var(--accent-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232f5bd3' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center/12px no-repeat; }
-  .shot { border-radius: 12px; border: 1px solid var(--line); box-shadow: var(--shadow); overflow: hidden; background: var(--card); }
+  /* ---------- showcase: one digit apart ---------- */
+  .showcase { padding-top: var(--section); }
+  .showcase .top { row-gap: 1.5rem; }
+  .showcase h2 { grid-column: 1 / 6; }
+  .showcase .top p { grid-column: 6 / 12; }
+  .specimens { margin-top: 12vh; height: clamp(15rem, 25vw, 24rem); overflow: hidden; row-gap: 0; }
+  .specimen { grid-column: span 6; }
+  .specimen { display: flex; align-items: flex-start; gap: 1.5rem; }
+  .specimen p { order: 2; max-width: 13ch; padding-top: 1.25rem; }
+  .specimen span { display: block; font-family: var(--font-display); font-size: clamp(11.25rem, 34vw, 32.5rem); line-height: 0.8; letter-spacing: -0.04em; }
+  @media (max-width: 860px) {
+    .showcase h2, .showcase .top p { grid-column: 1 / -1; }
+    .specimens { height: auto; margin-top: 3rem; }
+    .specimen { grid-column: 1 / -1; height: 38svh; overflow: hidden; padding: 1rem var(--margin) 0; margin-inline: calc(var(--margin) * -1); }
+    .specimen span { font-size: 62vw; }
+    .specimen + .specimen { background: var(--ink); color: var(--paper); }
+    .specimen p { padding-top: 0.5rem; }
+  }
 
-  /* demo */
-  .demo { margin-top: 48px; display: grid; gap: 32px; grid-template-columns: 1fr; }
-  @media (min-width: 960px) { .demo { grid-template-columns: 7fr 5fr; align-items: start; } }
-  .prompt { font-family: var(--mono); font-size: 15px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
-  .prompt::before { content: "› "; color: var(--accent); font-weight: 700; }
-  .answer { margin-top: 16px; display: grid; gap: 12px; font-size: 15px; }
-  .answer div { padding-left: 14px; border-left: 2px solid var(--line); color: var(--ink-2); }
-  .answer b { color: var(--ink); }
-  .answer .flag { border-left-color: var(--warn); }
-  .caption { font-size: 13px; color: var(--ink-3); margin-top: 10px; }
+  /* ---------- demo: the real run, with its sources ---------- */
+  .demo { background: var(--pink); margin-top: var(--section); padding-block: var(--section); }
+  .demo .grid { row-gap: 2.5rem; align-items: start; }
+  .viewer { position: sticky; top: 2rem; }
+  .viewer .page { background: var(--paper); aspect-ratio: 1240 / 1754; overflow: hidden; }
+  .viewer img { width: 100%; transition: opacity 260ms ease; }
+  .viewer img.swap { opacity: 0; }
+  .viewer figcaption { margin-top: 0.85rem; }
+  .demo .main > * + * { margin-top: 2rem; }
+  .demo h2 { margin-top: 0; }
+  .demo video { width: 100%; aspect-ratio: 1440 / 900; background: var(--paper); }
+  .demo .note { margin-top: 0.75rem; }
+  .prompt { font-family: var(--font-display); font-size: var(--step-lead); line-height: 1.2; }
+  .answer { display: grid; gap: 1rem; }
+  .answer div { display: grid; grid-template-columns: 9rem 1fr; gap: 0.25rem 1.25rem; }
+  .answer dt { font-weight: 500; }
+  .answer dd p { max-width: 52ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+  .chip { display: inline-flex; align-items: center; min-height: 2.25rem; padding: 0 0.8rem; background: var(--paper); font-size: var(--step-small); font-weight: 500; text-decoration: none; transition: background-color 180ms ease, color 180ms ease, transform 140ms var(--ease-out); }
+  .chip:active { transform: scale(0.96); }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  @media (hover: hover) and (pointer: fine) { .chip:not([aria-pressed="true"]):hover { background: var(--yellow); } }
+  @media (max-width: 860px) {
+    .demo .side { order: 2; }
+    .viewer { position: static; max-width: 26rem; }
+    .answer div { grid-template-columns: 1fr; }
+  }
 
-  /* architecture */
-  .arch { margin-top: 48px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 24px; }
-  .arch-in { display: grid; gap: 16px; grid-template-columns: 1fr; position: relative; }
-  @media (min-width: 820px) { .arch-in { grid-template-columns: 1fr 1fr 1fr; } }
-  .box { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: var(--bg-alt); }
-  .box h3 { font-size: 15px; display: flex; align-items: center; gap: 8px; }
-  .box p { font-size: 14px; color: var(--ink-2); margin-top: 6px; }
-  .box .tag { font: 12px/1 var(--mono); color: var(--ink-3); margin-top: 10px; }
-  .boundary { font-size: 13px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
-  .boundary svg { width: 16px; height: 16px; color: var(--ok); }
-  .models { width: 100%; border-collapse: collapse; margin-top: 24px; font-size: 14px; }
-  .models th, .models td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-  .models th { color: var(--ink-3); font-weight: 500; font-size: 13px; }
-  .models td:first-child { color: var(--ink-2); }
-  .table-scroll { overflow-x: auto; }
-  .optin { margin-top: 20px; font-size: 14px; color: var(--ink-2); display: flex; gap: 10px; align-items: flex-start; }
-  .optin svg { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--warn); }
+  /* ---------- features: fixed window, live controls ---------- */
+  .features { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gutter); }
+  .stage { grid-column: 1 / 7; position: sticky; top: 0; height: 100svh; background: var(--yellow); display: grid; align-items: center; padding: var(--margin); }
+  .window { position: relative; width: 100%; max-width: 46rem; justify-self: center; aspect-ratio: 1280 / 800; background: var(--paper); }
+  .window img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; transition: opacity 1.6s var(--ease-soft); }
+  .window img.on { opacity: 1; }
+  .reading { grid-column: 8 / 13; padding-top: 4.5rem; padding-right: var(--margin); padding-bottom: 30vh; }
+  .reading h2 { margin-bottom: 30vh; }
+  .block + .block { margin-top: 42vh; }
+  .block h3 { font-family: var(--font-text); font-weight: 500; font-size: var(--step-lead); line-height: 1.2; letter-spacing: -0.01em; max-width: 22ch; }
+  .block p { margin-top: 1rem; max-width: 44ch; }
+  .block .shot { display: none; }
+  .controls { display: inline-flex; margin-top: 1.5rem; background: #f1f1ef; }
+  .controls button { min-height: 2.75rem; padding: 0 1.1rem; font-size: var(--step-small); font-weight: 500; transition: background-color 180ms ease, color 180ms ease; }
+  .controls button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  @media (hover: hover) and (pointer: fine) { .controls button:not([aria-pressed="true"]):hover { background: var(--yellow); } }
+  @media (max-width: 860px) {
+    .features { display: block; }
+    .stage { display: none; }
+    .block .shot { display: block; margin: 1.5rem calc(var(--margin) * -1) 0; background: var(--yellow); padding: 1.25rem var(--margin); }
+    .reading { padding: 2.5rem var(--margin) 4rem; }
+    .reading h2 { margin-bottom: 3rem; }
+    .block + .block { margin-top: 4.5rem; }
+    .controls { display: flex; } .controls button { flex: 1; min-height: 2.75rem; }
+  }
 
-  /* downloads */
-  .dl { display: grid; gap: 16px; margin-top: 48px; grid-template-columns: 1fr; }
-  @media (min-width: 860px) { .dl { grid-template-columns: repeat(3, 1fr); } }
-  .dl .card { display: flex; flex-direction: column; gap: 14px; }
-  .dl .card.mine { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-  .dl .os { display: flex; align-items: center; gap: 12px; }
-  .dl .os svg { width: 30px; height: 30px; }
-  .dl .os small { display: block; color: var(--ink-3); font-size: 13px; font-family: var(--mono); }
-  .dl ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; display: grid; gap: 4px; }
-  .dl .btn { justify-content: center; margin-top: auto; }
-  .dl .meta { font-size: 12px; color: var(--ink-3); text-align: center; min-height: 18px; }
-  .note { font-size: 13px; color: var(--ink-3); background: var(--bg-alt); border-radius: 8px; padding: 10px 12px; }
-  .note.cpu { background: color-mix(in srgb, var(--warn) 12%, transparent); color: var(--ink-2); border-left: 3px solid var(--warn); }
-  .note.cpu b { color: var(--ink); }
-  .note code, .card code { font-family: var(--mono); font-size: 12px; }
+  /* ---------- how it works: one bar ---------- */
+  .stages { background: var(--cyan); padding-block: var(--section); }
+  .stages h2 { margin-bottom: 4rem; }
+  .bar-diagram { display: flex; gap: 6px; height: 22vh; min-height: 9rem; }
+  .seg { padding: 1.25rem; min-width: 0; }
+  .seg strong { font-family: var(--font-display); font-weight: 400; font-size: var(--step-lead); line-height: 1.1; display: block; }
+  .seg-1 { flex: 12 1 0; background: var(--paper); }
+  .seg-2 { flex: 50 1 0; background: var(--yellow); }
+  .seg-3 { flex: 24 1 0; background: var(--pink); }
+  .seg-4 { flex: 14 1 0; background: var(--orange); }
+  .clauses { display: flex; gap: 6px; margin-top: 1.25rem; }
+  .clauses p { min-width: 0; padding-right: 1rem; max-width: 26ch; }
+  .clauses p:nth-child(1) { flex: 12 1 0; } .clauses p:nth-child(2) { flex: 50 1 0; } .clauses p:nth-child(3) { flex: 24 1 0; } .clauses p:nth-child(4) { flex: 14 1 0; }
+  .seg p { display: none; }
+  @media (max-width: 860px) {
+    .bar-diagram { flex-direction: column; height: auto; min-height: 0; }
+    .seg-1 { min-height: 4.5rem; } .seg-2 { min-height: 15rem; } .seg-3 { min-height: 8rem; } .seg-4 { min-height: 5rem; }
+    .seg p { display: block; margin-top: 0.5rem; }
+    .clauses { display: none; }
+  }
 
-  /* faq */
-  details { border-bottom: 1px solid var(--line); padding: 18px 0; }
-  details summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
-  details summary::-webkit-details-marker { display: none; }
-  details summary::after { content: "+"; color: var(--ink-3); font-weight: 400; font-size: 22px; line-height: 1; }
-  details[open] summary::after { content: "–"; }
-  details p { color: var(--ink-2); margin-top: 10px; max-width: 760px; }
-  .faq { max-width: 820px; margin: 40px auto 0; }
+  /* ---------- inside: what runs where ---------- */
+  .inside { padding-block: var(--section); }
+  .inside .grid, .get .grid { row-gap: 2.5rem; }
+  .inside .side p, .get .side p { max-width: 34ch; }
+  .inside .side, .get .side { padding-top: 0.6rem; }
+  .cols { columns: 2; column-gap: 3rem; margin-top: 2.5rem; }
+  .cols p { break-inside: avoid; margin-bottom: 1.25rem; max-width: 40ch; }
+  @media (max-width: 860px) { .cols { columns: 1; } }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; vertical-align: top; padding: 0.85rem 1rem 0.85rem 0; }
+  thead th { font-weight: 500; }
+  .models { margin-top: 1.5rem; }
+  .models tbody tr:nth-child(odd) { background: #f4f4f2; }
+  .models th:first-child, .models td:first-child { padding-left: 0.75rem; }
+  .scroll-x { overflow-x: auto; }
 
-  footer { padding: 40px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--ink-3); }
-  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; }
-  footer a { color: var(--ink-2); text-decoration: none; margin-left: 20px; }
-  footer a:first-child { margin-left: 0; }
+  /* ---------- download ---------- */
+  .get { background: var(--yellow); padding-block: var(--section); }
+  .platforms { margin-top: 2.5rem; }
+  .platforms tbody tr { background: rgba(255, 255, 255, 0.45); }
+  .platforms tbody tr + tr { border-top: 6px solid var(--yellow); }
+  .platforms td, .platforms th { padding: 1.25rem 1rem; }
+  .platforms th[scope="row"] { font-family: var(--font-display); font-weight: 400; font-size: var(--step-lead); line-height: 1.1; width: 9rem; }
+  .platforms th[scope="row"] small { display: block; font-family: var(--font-text); font-size: var(--step-small); margin-top: 0.4rem; }
+  .platforms ul { padding-left: 1.1rem; }
+  .platforms .note { margin-top: 0.6rem; }
+  .platforms .warn { font-weight: 500; }
+  .platforms .dl { text-align: right; width: 1%; }
+  .platforms .meta { display: block; margin-top: 0.5rem; min-height: 1.2em; }
+  .platforms tr.mine { background: var(--paper); }
+  @media (max-width: 860px) {
+    .platforms, .platforms tbody, .platforms tr, .platforms td, .platforms th { display: block; width: auto; }
+    .platforms thead { display: none; }
+    .platforms td, .platforms th { padding: 0.5rem 1rem; }
+    .platforms th[scope="row"] { padding-top: 1.25rem; }
+    .platforms .dl { text-align: left; padding-bottom: 1.25rem; }
+  }
 
+  /* ---------- faq ---------- */
+  .faq { padding-block: var(--section); }
+  .faq h2 { grid-column: 1 / 4; }
+  .faq .answers { grid-column: 5 / 13; columns: 2; column-gap: 3.5rem; }
+  .faq .answers p { break-inside: avoid; margin-bottom: 1.25rem; max-width: 38ch; line-height: 1.55; }
+  .faq .answers b { font-weight: 500; }
+  @media (max-width: 860px) {
+    .faq h2, .faq .answers { grid-column: 1 / -1; }
+    .faq .answers { margin-top: 2rem; column-gap: 2rem; }
+    .faq .answers p { max-width: none; }
+  }
+  @media (max-width: 600px) {
+    .faq .answers { columns: 1; }
+  }
+
+  /* ---------- close + footer ---------- */
+  .close { background: var(--ink); color: var(--yellow); display: flex; flex-direction: column; justify-content: space-between; padding-block: clamp(5rem, 10vw, 8rem) 2.5rem; }
+  .close h2 { font-size: var(--step-display); line-height: 0.9; letter-spacing: -0.02em; }
+  .close .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 2rem; margin-top: clamp(4rem, 9vw, 8rem); }
+  .close .row p { font-size: var(--step-lead); max-width: 32ch; line-height: 1.35; }
+  @media (max-width: 760px) { .close .button { width: 100%; } }
+
+  footer { background: var(--orange); display: flex; flex-direction: column; justify-content: space-between; padding-block: 2.5rem; }
+  footer .top { display: flex; justify-content: space-between; gap: 2rem; align-items: start; }
+  footer .top p { max-width: 40ch; }
+  .contact { display: block; overflow-wrap: anywhere; font-family: var(--font-display); font-size: var(--step-display); line-height: 0.95; letter-spacing: -0.02em; text-decoration: none; margin-top: clamp(5rem, 12vw, 10rem); }
+  .contact span { display: inline-block; }
+  .contact:hover { text-decoration: underline; text-decoration-thickness: 0.05em; text-underline-offset: 0.12em; }
+  footer .meta { display: grid; grid-template-columns: 1fr auto 1fr; gap: 1rem; margin-top: 2rem; }
+  footer .meta > :nth-child(2) { text-align: center; }
+  footer .meta > :last-child { text-align: right; }
+  footer .meta a { margin-right: 1.25rem; }
+  @media (max-width: 760px) {
+    .contact { font-size: 15vw; }
+    footer .meta { grid-template-columns: 1fr; }
+    footer .meta > * { text-align: left !important; }
+  }
+
+  /* ---------- motion (content stays visible without JavaScript) ---------- */
+  @media (prefers-reduced-motion: no-preference) and (min-width: 600px) {
+    .js [data-reveal] { opacity: 0; transform: translateY(24px); transition: opacity 700ms var(--ease-out), transform 900ms var(--ease-out); transition-delay: calc(var(--i, 0) * 80ms); }
+    .js [data-reveal].is-in { opacity: 1; transform: none; }
+  }
   @media (prefers-reduced-motion: no-preference) {
-    .reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
-    .reveal.in { opacity: 1; transform: none; }
+    .js [data-rise] { opacity: 0; transform: translateY(20px); animation: rise 900ms var(--ease-out) forwards; animation-delay: calc(var(--i, 0) * 90ms + 120ms); }
+    .m-ask img { animation: drift 26s var(--ease-soft) infinite alternate; }
+    .m-wiki img { animation: drift-b 30s var(--ease-soft) infinite alternate; }
   }
+  @media (prefers-reduced-motion: reduce) { .window img { transition: none; } }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  @keyframes drift { from { transform: scale(1.32); } to { transform: scale(1.42) translate(-1.5%, 1%); } }
+  @keyframes drift-b { from { transform: scale(1.5); } to { transform: scale(1.62) translateY(-2%); } }
 </style>
 </head>
 <body>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="logo" viewBox="0 0 100 100"><rect x="10" y="10" width="80" height="80" rx="19" fill="#2f5bd3"/><path d="M33 25h26l11 11v42H33z" fill="#fff"/><path d="M59 25l11 11H59z" fill="#bec"/><rect x="39" y="45" width="25" height="3" rx="1.5" fill="#2f5bd3"/><rect x="39" y="53" width="25" height="3" rx="1.5" fill="#2f5bd3"/><rect x="39" y="61" width="25" height="3" rx="1.5" fill="#2f5bd3"/></symbol>
-  <symbol id="apple" viewBox="0 0 24 24"><path fill="currentColor" d="M16.4 12.6c0-2.4 2-3.6 2.1-3.7-1.1-1.7-2.9-1.9-3.5-1.9-1.5-.2-2.9.9-3.7.9-.8 0-1.9-.9-3.2-.8-1.6 0-3.1 1-4 2.4-1.7 3-.4 7.4 1.2 9.8.8 1.2 1.8 2.5 3 2.4 1.2 0 1.7-.8 3.1-.8 1.5 0 1.9.8 3.2.8 1.3 0 2.1-1.2 2.9-2.4.9-1.3 1.3-2.7 1.3-2.7s-2.4-1-2.4-4zM14 5.6c.7-.8 1.1-1.9 1-3-1 0-2.1.7-2.8 1.5-.6.7-1.2 1.8-1 2.9 1 .1 2.1-.6 2.8-1.4z"/></symbol>
-  <symbol id="windows" viewBox="0 0 24 24"><path fill="currentColor" d="M3 5.5l7.4-1v7.1H3zm8.3-1.2L21 3v8.6h-9.7zM3 12.4h7.4v7.1L3 18.5zm8.3 0H21V21l-9.7-1.3z"/></symbol>
-  <symbol id="linux" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2c-2 0-3.3 1.6-3.3 4 0 1.2.2 2-.4 3.1C7.4 10.6 5.5 13 5.5 15.6c0 .7.1 1.3.4 1.8-.7.3-1.6.6-1.6 1.4 0 1 1.3 1 2.3 1.4 1 .4 1.5 1.3 2.6 1.3.8 0 1.4-.5 1.7-1h2.2c.3.5.9 1 1.7 1 1.1 0 1.6-.9 2.6-1.3 1-.4 2.3-.4 2.3-1.4 0-.8-.9-1.1-1.6-1.4.3-.5.4-1.1.4-1.8 0-2.6-1.9-5-2.8-6.5-.6-1.1-.4-1.9-.4-3.1C15.3 3.6 14 2 12 2zm-1.3 4.3c.4 0 .6.4.6.9s-.2.9-.6.9-.6-.4-.6-.9.3-.9.6-.9zm2.6 0c.4 0 .6.4.6.9s-.3.9-.6.9c-.4 0-.6-.4-.6-.9s.2-.9.6-.9zM12 8.6c.8 0 1.8.4 1.8.8s-1 1.1-1.8 1.1-1.8-.7-1.8-1.1.9-.8 1.8-.8zm-2.4 3.2c.7.6 1.6 1 2.4 1s1.7-.4 2.4-1c.6 1.1 1.2 2.4 1.2 3.7 0 2.2-1.5 3.2-3.6 3.2s-3.6-1-3.6-3.2c0-1.3.6-2.6 1.2-3.7z"/></symbol>
   <symbol id="download" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></symbol>
-  <symbol id="shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M12 3l7.5 3v5.5c0 4.6-3.1 8.2-7.5 9.5-4.4-1.3-7.5-4.9-7.5-9.5V6z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M8.8 12.2l2.2 2.2 4.3-4.6"/></symbol>
-  <symbol id="globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z"/></g></symbol>
 </svg>
 
-<nav>
-  <div class="wrap">
-    <a class="brand" href="#"><svg><use href="#logo"/></svg>Local Office</a>
-    <div class="navlinks">
-      <a class="hide-sm" href="#features">Features</a>
-      <a class="hide-sm" href="#demo">Demo</a>
-      <a class="hide-sm" href="#privacy">How it works</a>
-      <a class="hide-sm" href="https://github.com/mfranzon/local-office">GitHub</a>
-      <a class="btn btn-primary btn-sm" href="#download">Download</a>
-    </div>
+<header class="hero wrap">
+  <div class="bar">
+    <a class="brand" href="#top" id="top"><svg aria-hidden="true"><use href="#logo"/></svg>Local Office</a>
+    <nav aria-label="Main">
+      <a href="#demo">Demo</a>
+      <a href="#features">Features</a>
+      <a href="#inside">How it works</a>
+      <a href="https://github.com/mfranzon/local-office">GitHub</a>
+      <a class="button" href="#download">Download</a>
+    </nav>
   </div>
-</nav>
 
-<header class="hero">
-  <div class="wrap center">
-    <div class="pill"><i></i>Runs 100% on your computer</div>
-    <h1>Ask your office documents. <em>Keep them on your desk.</em></h1>
-    <p class="lede">Drop in paper scans, PDFs, photos and Office files, then ask questions in plain language. Every answer cites the exact page it came from, and no file ever leaves your computer.</p>
-    <div class="cta">
-      <a class="btn btn-primary" id="hero-dl" href="#download"><svg><use href="#download"/></svg><span>Download for free</span></a>
-      <a class="btn btn-ghost" href="#demo">See it in action</a>
-    </div>
-    <p class="cta-note" id="hero-note">For Mac, Windows and Linux. Free and open source (MIT).</p>
+  <div class="mosaic">
+    <figure class="m-ask"><img src="screenshots/ask.png" width="2560" height="1600" alt="Local Office answering 'When is the Northwind payment due?' with two invoice due dates, each with a numbered citation."></figure>
+    <figure class="m-scan"><img src="sources/invoice-nw-2026-118.jpg" width="1240" height="1754" alt="The top of scanned invoice NW-2026-118 from Northwind Components Ltd."></figure>
+    <div class="m-fact"><p>No file leaves your computer</p></div>
+    <figure class="m-wiki"><img src="screenshots/wiki.png" width="2560" height="1600" alt="The wiki page for Northwind Components Ltd, with facts linked to their source documents."></figure>
   </div>
-  <div class="wrap">
-    <div class="window">
-      <div class="bar"><span></span><span></span><span></span></div>
-      <img src="screenshots/ask.png" width="1440" height="900" alt="Local Office answering 'When is the Northwind payment due?' with two invoice due dates, each linked to its source document.">
+
+  <div class="grid masthead">
+    <div class="side">
+      <p data-rise style="--i:3">Free and open source, MIT licence.</p>
+      <p data-rise style="--i:4">For Mac, Windows and Linux. Works offline after a one-time model download.</p>
+    </div>
+    <div class="main">
+      <h1 class="display" data-rise style="--i:0">Private AI for office paperwork</h1>
+      <p class="lead standfirst" data-rise style="--i:1">Ask your scans, PDFs and Office files in plain words. Every answer cites its page, and the AI runs on your own computer.</p>
+      <div class="actions" data-rise style="--i:2">
+        <a class="button" id="hero-dl" href="#download"><svg aria-hidden="true"><use href="#download"/></svg><span>Download for free</span></a>
+        <a class="link" href="#demo">Watch a real run</a>
+      </div>
+      <p class="small" id="hero-note" style="margin-top:1rem"></p>
     </div>
   </div>
 </header>
 
-<div class="strip">
-  <div><b>0 files</b><span>sent to the cloud. Models run locally on your CPU or GPU.</span></div>
-  <div><b>Every answer</b><span>cites its page. Click a citation to open the source.</span></div>
-  <div><b>Works offline</b><span>after a one-time model download of 5–8.5 GB.</span></div>
-  <div><b>Italian + English</b><span>interface, documents in any language the models read.</span></div>
-</div>
+<main>
+<section class="showcase wrap" aria-labelledby="digit">
+  <div class="grid top">
+    <h2 class="head" id="digit" data-reveal>One digit apart</h2>
+    <p data-reveal style="--i:1">In the demo run below, the contract with Northwind Components Ltd gives the VAT number GB 284 7391 56. The purchase order for the same supplier says GB 284 7391 65. Local Office read both files side by side, put the two numbers next to each other and said not to renew until someone checked.</p>
+  </div>
+  <div class="grid specimens" aria-label="The two VAT numbers' last digits">
+    <div class="specimen" data-reveal style="--i:1"><p>VAT on the contract, GB 284 7391</p><span class="nums">56</span></div>
+    <div class="specimen" data-reveal style="--i:2"><p>VAT on the purchase order, GB 284 7391</p><span class="nums">65</span></div>
+  </div>
+</section>
 
-<section id="features">
-  <div class="wrap">
-    <div class="center reveal">
-      <div class="eyebrow">Features</div>
-      <h2>A private assistant that knows your paperwork</h2>
-      <p class="lede">Invoices, contracts, purchase orders, meeting minutes. Local Office reads them all, remembers who and what they are about, and does the office chores you'd rather not.</p>
+<section class="demo wrap" id="demo" aria-labelledby="demo-h">
+  <div class="grid">
+    <div class="side">
+      <figure class="viewer" data-reveal style="--i:2">
+        <div class="page"><img id="source-img" src="sources/service-agreement-northwind.jpg" width="1240" height="1754" loading="lazy" alt="Page 1 of the service agreement between Acme Studio and Northwind Components Ltd."></div>
+        <figcaption class="small" id="source-cap">Service_Agreement_Northwind.docx, page 1</figcaption>
+      </figure>
     </div>
-    <div class="grid">
-      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></svg></div><h3>Any document</h3><p>PDFs, scans, phone photos (JPG, PNG, HEIC), TIFF, Word, Excel and text. Scans go through on-device OCR, and tables are kept.</p></div>
-      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h11l5 5v9H4z"/><path d="M8 14l2.5 2.5L16 11"/></svg></div><h3>Answers with sources</h3><p>Ask in plain words. Each claim links to the page it comes from, so you can check it in one click. Conversations are saved.</p></div>
-      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5.5C6.5 4 9.5 4 12 5.5 14.5 4 17.5 4 20 5.5V19c-2.5-1.5-5.5-1.5-8 0-2.5-1.5-5.5-1.5-8 0z"/><path d="M12 5.5V19"/></svg></div><h3>A wiki that builds itself</h3><p>Pages for companies, people and projects, compiled from your files. Conflicting facts, like two VAT numbers, go to a review list. Exports to Obsidian.</p></div>
-      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></svg></div><h3>Skills for office tasks</h3><p>Deadline reports, invoice tables, supplier checks, Word reports. Ask normally and the right skill is picked, or write your own with a <code>SKILL.md</code>.</p></div>
-      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 7h7l2 2h9v10H3z"/></svg></div><h3>Synced folders</h3><p>Connect local or shared folders. They stay in sync and are strictly read-only: nothing is moved, changed or deleted.</p></div>
-      <div class="card reveal"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div><h3>Fits your machine</h3><p>Picks the best models for your memory and GPU. Swap any of them, including any GGUF from Hugging Face; each is tested before it's switched on.</p></div>
-    </div>
-
-    <div class="row reveal">
-      <div>
-        <div class="eyebrow">Skills</div>
-        <h2>Turn a question into a finished file</h2>
-        <p class="lede">Skills teach the assistant a whole task. They read your documents and wiki, and can produce Word, Excel or Markdown files.</p>
-        <ul>
-          <li>Built-in skills for invoices, deadlines and supplier checks</li>
-          <li>Create your own in the app, or import a <code>SKILL.md</code> / <code>.zip</code></li>
-          <li>Safe by design: skills never send email, delete files or run scripts</li>
-        </ul>
+    <div class="main">
+      <h2 class="head" id="demo-h" data-reveal>A real supplier check</h2>
+      <p class="lead" data-reveal style="--i:1">A small studio's files on one supplier: a service agreement, two scanned invoices, a purchase order and meeting minutes. With them loaded, one question.</p>
+      <div data-reveal style="--i:2">
+        <video src="demo/supplier-check.mp4" poster="demo/supplier-check-poster.jpg" width="1440" height="900" autoplay muted loop playsinline preload="metadata" aria-label="Screen recording of the supplier-check skill running in Local Office"></video>
+        <p class="small note">Recorded on an Apple M5 Mac with Qwen3.5 9B. The 83-second run is sped up 12 times.</p>
       </div>
-      <div class="shot"><img src="screenshots/skill-run.png" width="1440" height="1000" loading="lazy" alt="The invoice table skill producing a table of invoices with amounts and due dates."></div>
-    </div>
-
-    <div class="row flip reveal">
-      <div>
-        <div class="eyebrow">Wiki</div>
-        <h2>Your second brain, with receipts</h2>
-        <p class="lede">The assistant extracts facts into pages for each organization, person and project. Every fact links back to its source.</p>
-        <ul>
-          <li>Names, identifiers and dates are verified against the source text</li>
-          <li>Entities are merged by name and VAT / tax code</li>
-          <li>Conflicts and likely duplicates wait for your review</li>
-        </ul>
-      </div>
-      <div class="shot"><img src="screenshots/wiki.png" width="1440" height="900" loading="lazy" alt="A wiki page for a supplier, listing contact details and facts with links to source documents."></div>
+      <blockquote class="prompt" data-reveal>“Check Northwind before we renew the contract”</blockquote>
+      <dl class="answer" data-reveal style="--i:1">
+        <div><dt>Summary</dt><dd><p>Check first, don't renew yet: the purchase order has a different VAT number than the contract.</p>
+          <div class="chips"><a class="chip" href="sources/service-agreement-northwind.jpg" data-src="contract" aria-pressed="true">Contract, p. 1</a><a class="chip" href="sources/purchase-order-po-7781.jpg" data-src="po" aria-pressed="false">Order PO-7781, p. 1</a></div></dd></div>
+        <div><dt>Contract</dt><dd><p>15/01/2026 to 31/12/2026. Renews automatically unless cancelled in writing by <b>30/11/2026</b>. Invoices due in 60 days.</p></dd></div>
+        <div><dt>Money</dt><dd><p class="nums">NW-2026-118 €4,000 due 30/11. NW-2026-131 €2,500 due 20/12. PO-7781 €1,700 open.</p>
+          <div class="chips"><a class="chip" href="sources/invoice-nw-2026-118.jpg" data-src="inv118" aria-pressed="false">Invoice NW-2026-118, p. 1</a><a class="chip" href="sources/invoice-nw-2026-131.jpg" data-src="inv131" aria-pressed="false">Invoice NW-2026-131, p. 1</a></div></dd></div>
+        <div><dt>To check</dt><dd><p>VAT GB 284 7391 <b>56</b> on the contract against <b>65</b> on the order, and “Northwind Components Ltd” against “Northwind Ltd”.</p></dd></div>
+        <div><dt>Public news</dt><dd><p>None for this company. The web hits were about a different “North Wind”, so they are left out.</p></dd></div>
+      </dl>
+      <p data-reveal>The facts come from files that stay on the computer. The only thing sent outside was one optional web search for the company's name, with no amounts and no people.</p>
     </div>
   </div>
 </section>
 
-<section id="demo" class="alt">
-  <div class="wrap">
-    <div class="center reveal">
-      <div class="eyebrow">Real run</div>
-      <h2>Check a supplier before the contract renews</h2>
-      <p class="lede">A service agreement, two scanned invoices, a purchase order and meeting minutes. One question.</p>
+<section class="features" id="features" aria-labelledby="features-h">
+  <div class="stage">
+    <div class="window" aria-live="polite">
+      <img class="on" data-shot="documents" src="screenshots/documents.png" width="2560" height="1600" loading="lazy" alt="The documents list with scanned invoices, Word files and their reading status.">
+      <img data-shot="ask" src="screenshots/ask.png" width="2560" height="1600" loading="lazy" alt="An answer about Northwind invoice due dates with numbered citations.">
+      <img data-shot="ask-it" src="screenshots/ask-it.png" width="2560" height="1600" loading="lazy" alt="The same kind of question asked in Italian, answered in Italian with citations.">
+      <img data-shot="skill-run" src="screenshots/skill-run.png" width="2560" height="1600" loading="lazy" alt="The invoice-table skill listing and reading documents, then producing an Excel file.">
+      <img data-shot="skills" src="screenshots/skills.png" width="2560" height="1600" loading="lazy" alt="The skills library with built-in office skills that can be switched on and off.">
+      <img data-shot="wiki" src="screenshots/wiki.png" width="2560" height="1600" loading="lazy" alt="The wiki page for a supplier, every fact linked to its source.">
+      <img data-shot="settings" src="screenshots/settings.png" width="2560" height="1600" loading="lazy" alt="Settings showing the local models chosen for this computer.">
     </div>
-    <div class="demo">
-      <div class="reveal">
-        <div class="shot">
-          <video src="demo/supplier-check.mp4" poster="screenshots/skill-run.png" autoplay muted loop playsinline preload="metadata" aria-label="Screen recording of the supplier-check skill running in Local Office"></video>
-        </div>
-        <p class="caption">Recorded on an Apple M5 Mac with Qwen3.5 9B. The 83-second run is sped up 12×.</p>
-      </div>
-      <div class="reveal">
-        <div class="prompt">Check Northwind before we renew the contract</div>
-        <div class="answer">
-          <div><b>Summary:</b> check first, don't renew yet. The purchase order has a different VAT number than the contract.</div>
-          <div><b>Contract:</b> renews automatically unless cancelled in writing by <b>30/11/2026</b>.</div>
-          <div><b>Money:</b> NW-2026-118 €4,000 due 30/11, NW-2026-131 €2,500 due 20/12, PO-7781 €1,700 open.</div>
-          <div class="flag"><b>Issue:</b> VAT GB 284 7391 <b>56</b> (contract) vs GB 284 7391 <b>65</b> (order).</div>
-          <div><b>Public news:</b> none. Web hits were about a different "North Wind", so they're left out.</div>
-        </div>
-        <p class="caption">The facts come from files that never leave the computer. The only thing sent outside is one optional web search for the company name.</p>
-      </div>
+  </div>
+  <div class="reading">
+    <h2 class="head" id="features-h" data-reveal>What it does</h2>
+    <div class="block" data-block="documents">
+      <h3 data-reveal>Reads any paper you have</h3>
+      <p data-reveal style="--i:1">PDFs, scans, phone photos (JPG, PNG, HEIC), TIFF, Word, Excel and text. Digital PDFs use their text layer; scans and photos are read with OCR on the computer, and tables are kept. Connected folders stay in sync and are only ever read.</p>
+      <figure class="shot"><img src="screenshots/documents.png" width="2560" height="1600" loading="lazy" alt=""></figure>
+      <div class="controls" data-reveal style="--i:2"><button type="button" data-show="documents" aria-pressed="true">Documents</button></div>
+    </div>
+    <div class="block" data-block="ask">
+      <h3 data-reveal>Answers with the page it came from</h3>
+      <p data-reveal style="--i:1">Ask in plain words, in English or Italian. Each claim carries a numbered citation; open it and the source page appears. Conversations are saved and can be reopened.</p>
+      <figure class="shot"><img src="screenshots/ask.png" width="2560" height="1600" loading="lazy" alt=""></figure>
+      <div class="controls" role="group" aria-label="Interface language" data-reveal style="--i:2"><button type="button" data-show="ask" aria-pressed="false">English</button><button type="button" data-show="ask-it" aria-pressed="false">Italiano</button></div>
+    </div>
+    <div class="block" data-block="skill-run">
+      <h3 data-reveal>Turns a question into a finished file</h3>
+      <p data-reveal style="--i:1">Skills are folders with a <code>SKILL.md</code> that teach the assistant an office task: deadline reports, invoice tables, Word reports, supplier checks. Ask normally and the right one is picked. They write Word, Excel or Markdown files, and never send email, delete anything or run scripts.</p>
+      <figure class="shot"><img src="screenshots/skill-run.png" width="2560" height="1600" loading="lazy" alt=""></figure>
+      <div class="controls" role="group" aria-label="Skills view" data-reveal style="--i:2"><button type="button" data-show="skill-run" aria-pressed="false">A skill at work</button><button type="button" data-show="skills" aria-pressed="false">The library</button></div>
+    </div>
+    <div class="block" data-block="wiki">
+      <h3 data-reveal>Keeps a wiki of who is who</h3>
+      <p data-reveal style="--i:1">Pages for organisations, people and projects, built from your documents. Names, identifiers and dates are checked against the source text, and every fact links to its page. Conflicting values and likely duplicates wait for your review. Exports to Obsidian.</p>
+      <figure class="shot"><img src="screenshots/wiki.png" width="2560" height="1600" loading="lazy" alt=""></figure>
+      <div class="controls" data-reveal style="--i:2"><button type="button" data-show="wiki" aria-pressed="false">Wiki</button></div>
+    </div>
+    <div class="block" data-block="settings">
+      <h3 data-reveal>Fits the computer it runs on</h3>
+      <p data-reveal style="--i:1">The app picks models for the machine's memory and graphics card. Swap any of them in Settings, including any GGUF model from Hugging Face. Each is downloaded, started and tested before it takes over.</p>
+      <figure class="shot"><img src="screenshots/settings.png" width="2560" height="1600" loading="lazy" alt=""></figure>
+      <div class="controls" data-reveal style="--i:2"><button type="button" data-show="settings" aria-pressed="false">Settings</button></div>
     </div>
   </div>
 </section>
 
-<section id="privacy">
-  <div class="wrap">
-    <div class="center reveal">
-      <div class="eyebrow">How it works</div>
-      <h2>Everything runs inside the app</h2>
-      <p class="lede">A native window, a local database and open-weight models served by llama.cpp on a private localhost port. No account, no subscription, no upload.</p>
+<section class="stages wrap" aria-labelledby="stages-h">
+  <h2 class="display" id="stages-h" data-reveal>From download to answer</h2>
+  <div class="bar-diagram" data-ui data-reveal style="--i:1">
+    <div class="seg seg-1"><strong>A minute</strong><p>First, install it like any other app.</p></div>
+    <div class="seg seg-2"><strong>Minutes, once</strong><p>Then it downloads the models picked for your computer: 5 to 8.5 GB, one time only.</p></div>
+    <div class="seg seg-3"><strong>Seconds a page</strong><p>Next, drop in files. Scans and photos are read with OCR, on the computer.</p></div>
+    <div class="seg seg-4"><strong>Seconds</strong><p>Finally, ask. The answer cites its pages.</p></div>
+  </div>
+  <div class="clauses" aria-hidden="true">
+    <p data-reveal style="--i:2">First, install it like any other app.</p>
+    <p data-reveal style="--i:3">Then it downloads the models picked for your computer: 5 to 8.5 GB, one time only. After that it works offline.</p>
+    <p data-reveal style="--i:4">Next, drop in files. Scans and photos are read with OCR, on the computer.</p>
+    <p data-reveal style="--i:5">Finally, ask. The answer cites its pages.</p>
+  </div>
+</section>
+
+<section class="inside wrap" id="inside" aria-labelledby="inside-h">
+  <div class="grid">
+    <div class="side">
+      <p class="small" data-reveal style="--i:2"><b>Opt-in only.</b> Connected services (MCP servers for mail, calendar, CRM or web search) are the one feature that sends data off the computer. You add them in Settings; only tools a server marks read-only start switched on.</p>
     </div>
-    <div class="arch reveal">
-      <div class="boundary"><svg><use href="#shield"/></svg>Your computer</div>
-      <div class="arch-in">
-        <div class="box"><h3>Native window</h3><p>A React interface in the system's web view: WebKit on Mac and Linux, WebView2 on Windows.</p><div class="tag">UI</div></div>
-        <div class="box"><h3>Local backend</h3><p>Ingest, OCR, hybrid search (vector + keyword), wiki and skills. Files and index live in a local SQLite database.</p><div class="tag">FastAPI · SQLite · sqlite-vec · FTS5</div></div>
-        <div class="box"><h3>Local models</h3><p>One llama-server per role, started on first use and stopped when idle. Metal on Mac, CUDA on NVIDIA, CPU otherwise.</p><div class="tag">llama.cpp · GGUF</div></div>
+    <div class="main">
+      <h2 class="head" id="inside-h" data-reveal>Everything runs inside</h2>
+      <div class="cols">
+        <p data-reveal style="--i:1"><b>A native window.</b> A React interface in the system's web view: WebKit on Mac and Linux, WebView2 on Windows. No browser tab, no account, no subscription.</p>
+        <p data-reveal style="--i:2"><b>A local backend.</b> Reading, OCR, hybrid search (vectors and keywords), the wiki and skills, on a private localhost port. Files and the index live in one SQLite database on your disk.</p>
+        <p data-reveal style="--i:3"><b>Local models.</b> One llama.cpp server per role, started on first use and stopped when idle. Metal on a Mac, CUDA on an NVIDIA card, the CPU otherwise.</p>
       </div>
-      <div class="table-scroll">
+      <div class="scroll-x" data-reveal style="--i:4">
         <table class="models">
-          <thead><tr><th>Role</th><th>24 GB+ memory</th><th>16 GB memory</th></tr></thead>
+          <caption class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Models chosen by memory</caption>
+          <thead><tr><th scope="col">Role</th><th scope="col">24 GB memory or more</th><th scope="col">16 GB memory</th></tr></thead>
           <tbody>
             <tr><td>Answers, chat, images, skills</td><td>Qwen3.5 9B</td><td>Qwen3.5 4B</td></tr>
             <tr><td>OCR of scanned pages</td><td>LightOnOCR-2 1B</td><td>LightOnOCR-2 1B</td></tr>
@@ -335,65 +473,85 @@
           </tbody>
         </table>
       </div>
-      <p class="optin"><svg><use href="#globe"/></svg><span><b>Opt-in only:</b> connected services (MCP servers for mail, calendar, CRM, web search) are the one feature that sends data off the computer. Only tools a server marks read-only start switched on.</span></p>
     </div>
   </div>
 </section>
 
-<section id="download" class="alt">
-  <div class="wrap">
-    <div class="center reveal">
-      <div class="eyebrow">Download</div>
-      <h2>Get Local Office</h2>
-      <p class="lede">Free and open source. On first launch it downloads the AI models chosen for your machine once, then works offline.</p>
+<section class="get wrap" id="download" aria-labelledby="get-h">
+  <div class="grid">
+    <div class="side">
+      <p class="small" data-reveal style="--i:2">Every version and its release notes are on <a class="link" href="https://github.com/mfranzon/local-office/releases">GitHub Releases</a>. Snapdragon X Elite laptops (ARM64 with NPU) have a <a class="link" href="https://github.com/mfranzon/local-office/blob/main/docs/snapdragon.md">separate setup</a>.</p>
     </div>
-    <div class="dl">
-      <div class="card" data-os="mac">
-        <div class="os"><svg><use href="#apple"/></svg><div><h3>macOS</h3><small>LocalOffice.dmg</small></div></div>
-        <ul><li>Apple Silicon (M1 or later)</li><li>macOS 14 Sonoma or newer</li><li>16 GB memory, 24 GB recommended</li></ul>
-        <p class="note">Open the .dmg and drag Local Office into Applications. If macOS warns on first open: System Settings → Privacy &amp; Security → <i>Open Anyway</i>.</p>
-        <a class="btn btn-primary" data-asset="dmg" href="https://github.com/mfranzon/local-office/releases"><svg><use href="#download"/></svg>Download .dmg</a>
-        <div class="meta"></div>
-      </div>
-      <div class="card" data-os="win">
-        <div class="os"><svg><use href="#windows"/></svg><div><h3>Windows</h3><small>LocalOffice-Setup.exe</small></div></div>
-        <ul><li>Windows 10 or 11, x64</li><li>NVIDIA GPU used if present (driver only), CPU otherwise</li><li>No administrator rights needed</li></ul>
-        <p class="note">The installer isn't code-signed yet. If SmartScreen appears: <i>More info</i> → <i>Run anyway</i>.</p>
-        <a class="btn btn-primary" data-asset="exe" href="https://github.com/mfranzon/local-office/releases"><svg><use href="#download"/></svg>Download .exe</a>
-        <div class="meta"></div>
-      </div>
-      <div class="card" data-os="linux">
-        <div class="os"><svg><use href="#linux"/></svg><div><h3>Linux</h3><small>local-office_amd64.deb</small></div></div>
-        <ul><li>Ubuntu 24.04 or compatible, x64</li><li>16 GB memory, a recent multi-core CPU</li><li>Uses the system GTK and WebKit</li></ul>
-        <p class="note cpu"><b>CPU only.</b> This package does not use your graphics card, even if you have an NVIDIA GPU. Answers are noticeably slower than on a Mac or a GPU. For GPU acceleration (CUDA), <a href="https://github.com/mfranzon/local-office#linux-ubuntu-2404">build from source</a>.</p>
-        <p class="note">Install with <code>sudo apt install ./local-office_*_amd64.deb</code>, then open it from your app menu.</p>
-        <a class="btn btn-primary" data-asset="deb" href="https://github.com/mfranzon/local-office/releases"><svg><use href="#download"/></svg>Download .deb (CPU only)</a>
-        <div class="meta"></div>
-      </div>
-    </div>
-    <p class="cta-note center">All versions and release notes are on <a href="https://github.com/mfranzon/local-office/releases">GitHub Releases</a>. Snapdragon X Elite (ARM64 with NPU) has a <a href="https://github.com/mfranzon/local-office/blob/main/docs/snapdragon.md">separate setup</a>.</p>
-  </div>
-</section>
-
-<section id="faq">
-  <div class="wrap">
-    <div class="center"><div class="eyebrow">FAQ</div><h2>Questions</h2></div>
-    <div class="faq">
-      <details><summary>Does any of my data leave the computer?</summary><p>No. Documents, the database, the wiki and the models all stay on your machine. The only exception is connected services (MCP), which you switch on yourself in Settings and which show exactly which tools they can use.</p></details>
-      <details><summary>Do I need an internet connection?</summary><p>Only once, to download the AI models on first launch (5–8.5 GB depending on your machine). After that Local Office works fully offline.</p></details>
-      <details><summary>How accurate are the answers?</summary><p>Local models are small and can make mistakes. That's why every answer cites the page it comes from, and every wiki fact links to its source and can be rejected or edited.</p></details>
-      <details><summary>Where are my files stored?</summary><p>macOS: <code>~/Library/Application Support/Local Office/</code>. Windows: <code>%LOCALAPPDATA%\Local Office\</code>. Linux: <code>~/.local/share/local-office/</code>. Connected folders are only read, never changed.</p></details>
-      <details><summary>Does the Linux package use my GPU?</summary><p>No. The .deb runs the models on the CPU only, so it works on any x64 machine but answers more slowly. To use an NVIDIA GPU, <a href="https://github.com/mfranzon/local-office#linux-ubuntu-2404">build Local Office from source</a>: the build detects CUDA and compiles GPU support for your card.</p></details>
-      <details><summary>Can I use a different model?</summary><p>Yes. Any role can be switched in Settings, including any GGUF model from Hugging Face. A switch runs download → start → test → swap, and the current model stays if any step fails.</p></details>
-      <details><summary>How much does it cost?</summary><p>Nothing. Local Office is MIT-licensed. The models keep their own licenses (Qwen3.5, Qwen3-Embedding and LightOnOCR-2 are Apache 2.0).</p></details>
+    <div class="main">
+      <h2 class="head" id="get-h" data-reveal>Download Local Office</h2>
+      <p class="lead" data-reveal style="--i:1" >Free and open source. On first launch it downloads the models chosen for your computer, once.</p>
+      <table class="platforms" data-reveal style="--i:2">
+        <thead><tr><th scope="col">System</th><th scope="col">Needs</th><th scope="col"><span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Download</span></th></tr></thead>
+        <tbody>
+          <tr data-os="mac">
+            <th scope="row">macOS<small>LocalOffice.dmg</small></th>
+            <td><ul><li>Apple Silicon (M1 or later)</li><li>macOS 14 Sonoma or newer</li><li>16 GB memory, 24 GB for the best model</li></ul>
+              <p class="small note">Open the .dmg and drag Local Office into Applications. If macOS warns on first open: System Settings, Privacy &amp; Security, <i>Open Anyway</i>.</p></td>
+            <td class="dl"><a class="button" data-asset="dmg" href="https://github.com/mfranzon/local-office/releases"><svg aria-hidden="true"><use href="#download"/></svg>Download .dmg</a><span class="small meta"></span></td>
+          </tr>
+          <tr data-os="win">
+            <th scope="row">Windows<small>LocalOffice-Setup.exe</small></th>
+            <td><ul><li>Windows 10 or 11, x64</li><li>Uses an NVIDIA card if present, the CPU otherwise</li><li>No administrator rights needed</li></ul>
+              <p class="small note">The installer isn't code-signed yet. If SmartScreen appears: <i>More info</i>, then <i>Run anyway</i>.</p></td>
+            <td class="dl"><a class="button" data-asset="exe" href="https://github.com/mfranzon/local-office/releases"><svg aria-hidden="true"><use href="#download"/></svg>Download .exe</a><span class="small meta"></span></td>
+          </tr>
+          <tr data-os="linux">
+            <th scope="row">Linux<small>local-office_amd64.deb</small></th>
+            <td><ul><li>Ubuntu 24.04 or compatible, x64</li><li>16 GB memory, a recent multi-core CPU</li><li>Uses the system GTK and WebKit</li></ul>
+              <p class="note warn">CPU only: this package does not use your graphics card, even an NVIDIA one, so answers are noticeably slower. For CUDA, <a class="link" href="https://github.com/mfranzon/local-office#linux-ubuntu-2404">build from source</a>.</p>
+              <p class="small note">Install with <code>sudo apt install ./local-office_*_amd64.deb</code>, then open it from your app menu.</p></td>
+            <td class="dl"><a class="button" data-asset="deb" href="https://github.com/mfranzon/local-office/releases"><svg aria-hidden="true"><use href="#download"/></svg>Download .deb</a><span class="small meta"></span></td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
 
-<footer>
-  <div class="wrap">
-    <span>Local Office · MIT License</span>
-    <span><a href="https://github.com/mfranzon/local-office">Source code</a><a href="https://github.com/mfranzon/local-office/releases">Releases</a><a href="https://github.com/mfranzon/local-office/issues">Report an issue</a></span>
+<section class="faq wrap" id="faq" aria-labelledby="faq-h">
+  <div class="grid">
+    <h2 class="head" id="faq-h">Questions</h2>
+    <div class="answers">
+      <p><b>Does any of my data leave the computer?</b> No. Documents, the database, the wiki and the models all stay on your machine. The one exception is connected services (MCP), which you switch on yourself in Settings and which show exactly which tools they can use.</p>
+      <p><b>Do I need an internet connection?</b> Only once, to download the models on first launch (5 to 8.5 GB depending on the computer). After that Local Office works fully offline.</p>
+      <p><b>How accurate are the answers?</b> Local models are small and can make mistakes. That is why every answer cites the page it comes from, and every wiki fact links to its source and can be rejected or edited.</p>
+      <p><b>Where are my files stored?</b> On a Mac in <code>~/Library/Application Support/Local Office/</code>, on Windows in <code>%LOCALAPPDATA%\Local Office\</code>, on Linux in <code>~/.local/share/local-office/</code>. Connected folders are only read, never changed.</p>
+      <p><b>Which languages does it speak?</b> The interface is in English and Italian. Documents can be in any language the models read, and you can ask in either.</p>
+      <p><b>Does the Linux package use my GPU?</b> No. The .deb runs the models on the CPU only, so it works on any x64 machine but answers more slowly. To use an NVIDIA card, build Local Office from source: the build detects CUDA and compiles GPU support for it.</p>
+      <p><b>Can I use a different model?</b> Yes. Any role can be switched in Settings, including any GGUF model from Hugging Face. A switch downloads, starts and tests the new model, and the current one stays if any step fails.</p>
+      <p><b>Can I teach it my own tasks?</b> Yes. Write a skill in the app, or import a <code>SKILL.md</code> or a <code>.zip</code> in the Agent Skills format. Skills can read documents and the wiki and create files, nothing more.</p>
+      <p><b>How much does it cost?</b> Nothing. Local Office is MIT-licensed. The models keep their own licences: Qwen3.5, Qwen3-Embedding and LightOnOCR-2 are Apache 2.0.</p>
+    </div>
+  </div>
+</section>
+
+<section class="close wrap" aria-labelledby="close-h">
+  <h2 id="close-h">Ask away. Nothing leaves.</h2>
+  <div class="row">
+    <p>Download it, drop in a folder of scans and contracts, and ask your first question in a few minutes.</p>
+    <a class="button" id="close-dl" href="#download"><svg aria-hidden="true"><use href="#download"/></svg><span>Download Local Office</span></a>
+  </div>
+</section>
+</main>
+
+<footer class="wrap">
+  <div class="top">
+    <p class="small">Local Office, private AI for office paperwork. Free under the MIT licence.</p>
+    <a class="link small" href="#top">Back to top</a>
+  </div>
+  <div>
+    <h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Source code</h2>
+    <a class="contact" href="https://github.com/mfranzon/local-office"><span>mfranzon/</span><span>local-office</span></a>
+    <div class="meta small">
+      <div><a class="link" href="https://github.com/mfranzon/local-office/releases">Releases</a><a class="link" href="https://github.com/mfranzon/local-office/issues">Report an issue</a></div>
+      <div>Models keep their own licences</div>
+      <div>2026</div>
+    </div>
   </div>
 </footer>
 
@@ -407,9 +565,10 @@
   const ua = navigator.userAgent;
   const os = /Mac/.test(ua) && !/iPhone|iPad/.test(ua) ? "mac" : /Windows/.test(ua) ? "win" : /Linux/.test(ua) && !/Android/.test(ua) ? "linux" : null;
   const hero = document.getElementById("hero-dl");
+  const close = document.getElementById("close-dl");
   if (os) {
     hero.querySelector("span").textContent = LABEL[os];
-    document.querySelector(`.dl [data-os="${os}"]`)?.classList.add("mine");
+    document.querySelector(`.platforms [data-os="${os}"]`)?.classList.add("mine");
   }
 
   const mb = n => (n / 1048576).toFixed(0) + " MB";
@@ -427,20 +586,68 @@
       for (const [key, f] of Object.entries(found)) {
         const btn = document.querySelector(`[data-asset="${key}"]`);
         btn.href = f.url;
-        btn.closest(".card").querySelector(".meta").textContent = `${f.tag}${f.pre ? " (preview)" : ""} · ${mb(f.size)}`;
+        btn.parentElement.querySelector(".meta").textContent = `${f.tag}${f.pre ? " (preview)" : ""}, ${mb(f.size)}`;
       }
       if (os && found[ASSET[os]]) {
         const f = found[ASSET[os]];
-        hero.href = f.url;
-        document.getElementById("hero-note").textContent = `${f.tag} · ${mb(f.size)} · Other platforms below. Free and open source (MIT).`;
+        hero.href = close.href = f.url;
+        document.getElementById("hero-note").textContent = `${f.tag}, ${mb(f.size)}. Other systems further down.`;
       }
     })
     .catch(() => {});
 
-  const io = "IntersectionObserver" in window && new IntersectionObserver(es => es.forEach(e => {
-    if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
-  }), { rootMargin: "0px 0px -8% 0px" });
-  document.querySelectorAll(".reveal").forEach(el => io ? io.observe(el) : el.classList.add("in"));
+  // Entrances: once, on enter; content is visible without script.
+  const reveal = document.querySelectorAll("[data-reveal]");
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); }
+    }), { rootMargin: "0px 0px -10% 0px" });
+    reveal.forEach(el => io.observe(el));
+    addEventListener("load", () => setTimeout(() => reveal.forEach(el => {
+      const r = el.getBoundingClientRect(); if (r.top < innerHeight && r.bottom > 0) el.classList.add("is-in");
+    }), 2500));
+  } else reveal.forEach(el => el.classList.add("is-in"));
+
+  // Citations open their source page, as they do in the app.
+  const SOURCES = {
+    contract: ["sources/service-agreement-northwind.jpg", "Service_Agreement_Northwind.docx, page 1", "Page 1 of the service agreement between Acme Studio and Northwind Components Ltd."],
+    po: ["sources/purchase-order-po-7781.jpg", "Purchase_Order_PO-7781.docx, page 1", "Purchase order PO-7781 to Northwind Ltd, with VAT number GB 284 7391 65."],
+    inv118: ["sources/invoice-nw-2026-118.jpg", "Invoice_NW-2026-118.png, page 1 (scan)", "Scanned invoice NW-2026-118 from Northwind Components Ltd, 4,000 euro due 30/11/2026."],
+    inv131: ["sources/invoice-nw-2026-131.jpg", "Invoice_NW-2026-131.png, page 1 (scan)", "Scanned invoice NW-2026-131 from Northwind Components Ltd, 2,500 euro due 20/12/2026."],
+  };
+  const img = document.getElementById("source-img"), cap = document.getElementById("source-cap");
+  const chips = document.querySelectorAll(".chip");
+  chips.forEach(chip => chip.addEventListener("click", ev => {
+    ev.preventDefault();
+    const [src, caption, alt] = SOURCES[chip.dataset.src];
+    chips.forEach(c => c.setAttribute("aria-pressed", String(c.dataset.src === chip.dataset.src)));
+    if (img.getAttribute("src") === src) return;
+    img.classList.add("swap");
+    setTimeout(() => {
+      img.src = src; img.alt = alt; cap.textContent = caption;
+      img.decode().catch(() => {}).then(() => img.classList.remove("swap"));
+    }, 220);
+    if (matchMedia("(max-width: 860px)").matches) img.closest("figure").scrollIntoView({ behavior: "smooth", block: "center" });
+  }));
+
+  // The fixed window follows the block being read; the controls switch it directly.
+  const shots = document.querySelectorAll(".window img");
+  const buttons = document.querySelectorAll(".controls button");
+  const show = name => {
+    shots.forEach(s => s.classList.toggle("on", s.dataset.shot === name));
+    buttons.forEach(b => b.setAttribute("aria-pressed", String(b.dataset.show === name)));
+    const own = document.querySelector(`.controls [data-show="${name}"]`)?.closest(".block")?.querySelector(".shot img");
+    if (own) own.src = `screenshots/${name}.png`;
+  };
+  buttons.forEach(b => b.addEventListener("click", () => show(b.dataset.show)));
+  if ("IntersectionObserver" in window) {
+    const chosen = {};
+    buttons.forEach(b => b.addEventListener("click", () => { chosen[b.closest(".block").dataset.block] = b.dataset.show; }));
+    const bo = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { const k = e.target.dataset.block; show(chosen[k] || k); }
+    }), { rootMargin: "-35% 0px -35% 0px" });
+    document.querySelectorAll(".block").forEach(b => bo.observe(b));
+  }
 })();
 </script>
 </body>
