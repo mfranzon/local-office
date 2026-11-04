@@ -126,7 +126,7 @@ def test_idle_timeout_stops_only_selected_slot(protocol, monkeypatch):
 
 
 def test_reap_waits_outside_event_loop(monkeypatch):
-    monkeypatch.setattr(npu, "_workers", {"embed": SimpleNamespace(last_used=0)})
+    monkeypatch.setattr(npu, "_workers", {"embed": SimpleNamespace(last_used=float("-inf"))})
     monkeypatch.setattr(npu, "_lock", asyncio.Lock())
     monkeypatch.setattr(npu, "shutdown", lambda slot: time.sleep(.09))
     ticks = []
