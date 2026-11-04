@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from app import agent, llm, npu, npu_worker, provision, skills, tools
+from app import db as dbmod
 
 
 @pytest.mark.parametrize("stop", ["length", "context_length", "eos"])
@@ -84,6 +85,8 @@ def test_embeddings_drain_done_before_reusing_worker(monkeypatch):
 
 @pytest.mark.parametrize("query", ["Explain this file format", "Write a word of thanks", "Explain Excel formulas", "Summarize these instructions"])
 def test_source_free_skills_do_not_trigger_file_or_source_guards(tmp_path, monkeypatch, query):
+    monkeypatch.setattr(dbmod, "DATA_DIR", tmp_path)
+    dbmod.init()
     seen = []
     async def complete(role, messages, **kwargs):
         seen.append(messages)
