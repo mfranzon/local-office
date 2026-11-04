@@ -34,7 +34,7 @@ async def run():
             expected = "47815" if role == "ocr" else "blue" if role == "vision" else "OK"
             assert expected.lower() in response["content"].lower()
     finally:
-        npu.shutdown()
+        await npu.ashutdown()
 
 
 if __name__ == "__main__":

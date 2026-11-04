@@ -59,10 +59,10 @@ export default function Images({ refreshDocs }: { refreshDocs: () => void }) {
   };
 
   const actions = [
-    [t("qa_describe"), t("p_describe"), Sparkles],
-    [t("qa_text"), t("p_text"), ScanText],
-    [t("qa_table"), t("p_table"), Table],
-    [t("qa_chart"), t("p_chart"), BarChart3],
+    [t("qa_describe"), t("p_describe"), Sparkles, "vision"],
+    [t("qa_text"), t("p_text"), ScanText, "ocr"],
+    [t("qa_table"), t("p_table"), Table, "table"],
+    [t("qa_chart"), t("p_chart"), BarChart3, "vision"],
   ] as const;
 
   const chooser = (
@@ -105,8 +105,8 @@ export default function Images({ refreshDocs }: { refreshDocs: () => void }) {
       <div className="flex flex-col min-h-0">
         <div className="flex-1 overflow-auto px-6 py-6 space-y-5">
           <div className="flex flex-wrap gap-2">
-            {actions.map(([label, prompt, Icon], i) => (
-              <button key={label} onClick={() => send(prompt, i === 1 ? "ocr" : i === 2 ? "table" : "vision")} disabled={busy}
+            {actions.map(([label, prompt, Icon, mode]) => (
+              <button key={label} onClick={() => send(prompt, mode)} disabled={busy}
                 className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm hover:border-accent hover:text-accent disabled:opacity-40">
                 <Icon size={16} /> {label}
               </button>

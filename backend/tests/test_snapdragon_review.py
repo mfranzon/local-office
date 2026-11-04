@@ -18,7 +18,11 @@ def test_ocr_uses_requested_budget_and_rejects_partial_output(monkeypatch, stop)
 
     def generate(prompt, **kwargs):
         budgets.append(kwargs["max_new_tokens"])
-        return SimpleNamespace(text="partial page", profile=SimpleNamespace(stop_reason=stop))
+        class Stream:
+            output = SimpleNamespace(text="partial page", profile=SimpleNamespace(stop_reason=stop))
+            def __iter__(self):
+                return iter(["partial page"])
+        return Stream()
 
     fake = SimpleNamespace(reset=lambda: None, supports_thinking=False,
         tokenizer=SimpleNamespace(apply_chat_template=lambda *a, **k: "prompt"), generate=generate)
@@ -26,15 +30,18 @@ def test_ocr_uses_requested_budget_and_rejects_partial_output(monkeypatch, stop)
     monkeypatch.setattr(npu_worker, "_spec", {"role": "ocr", "context": 4096})
     monkeypatch.setattr(npu_worker, "_tokenizer", None)
     monkeypatch.setattr(npu_worker, "emit", lambda *a, **k: emitted.append((a, k)))
-    request = {"messages": [{"role": "user", "content": [llm.image_part(b"image")]}],
+    from PIL import Image
+    image = io.BytesIO()
+    Image.new("RGB", (32, 32)).save(image, "PNG")
+    request = {"messages": [{"role": "user", "content": [llm.image_part(image.getvalue())]}],
                "params": {"max_tokens": 4096}}
     if stop == "eos":
         npu_worker.chat(request)
-        assert emitted[0][1]["message"]["content"] == "partial page"
+        assert emitted[-1][1]["message"]["content"] == "partial page"
     else:
-        with pytest.raises(RuntimeError, match="OCR output was truncated"):
+        with pytest.raises(npu_worker.RequestError, match="OCR output was truncated"):
             npu_worker.chat(request)
-        assert not emitted  # Ingestion cannot receive/store a successful partial message.
+        assert not any(a[0] == "message" for a, _ in emitted)
     assert budgets[0] > 1536
 
 
@@ -56,10 +63,13 @@ def test_embeddings_drain_done_before_reusing_worker(monkeypatch):
 
     proc.stdin = SimpleNamespace(write=write, flush=lambda: None)
     proc.stdout = SimpleNamespace(readline=lambda: lines.pop(0))
-    monkeypatch.setattr(npu, "_proc", proc)
+    worker = npu.Worker(proc, "embed", "test")
     monkeypatch.setattr(npu, "_lock", asyncio.Lock())
     monkeypatch.setattr(npu, "have", lambda spec: True)
-    monkeypatch.setattr(npu, "_start", lambda spec: starts.append(proc))
+    def start(spec):
+        starts.append(proc)
+        return worker
+    monkeypatch.setattr(npu, "_start", start)
     monkeypatch.setattr(npu, "shutdown", lambda: pytest.fail("A completed embedding request must not terminate its worker"))
 
     async def run():
@@ -72,35 +82,19 @@ def test_embeddings_drain_done_before_reusing_worker(monkeypatch):
     assert starts == [proc, proc]
 
 
-@pytest.mark.parametrize("tool", ["search_documents", "list_deadlines"])
-@pytest.mark.parametrize("result,accepted", [("Error: failed lookup", False), ("No documents match.", True)])
-def test_failed_lookups_do_not_satisfy_snapdragon_source_guard(tmp_path, monkeypatch, tool, result, accepted):
-    monkeypatch.setattr(agent, "SNAPDRAGON", True)
-    monkeypatch.setattr(agent, "MAX_STEPS", 2)
-    first = True
-
-    async def complete(*args, **kwargs):
-        nonlocal first
-        if first:
-            first = False
-            return {"tool_calls": [{"id": "lookup", "function": {"name": tool, "arguments": "{}"}}]}
-        return {"content": "No matching records."}
-
-    async def call(*args):
-        return result
-
+@pytest.mark.parametrize("query", ["Explain this file format", "Write a word of thanks", "Explain Excel formulas", "Summarize these instructions"])
+def test_source_free_skills_do_not_trigger_file_or_source_guards(tmp_path, monkeypatch, query):
+    seen = []
+    async def complete(role, messages, **kwargs):
+        seen.append(messages)
+        return {"content": "Here is the explanation."}
     monkeypatch.setattr(llm, "complete", complete)
-    monkeypatch.setattr(tools, "call", call)
-    skill = skills.Skill("test", "Test", "Read documents.", tmp_path, builtin=False)
-
+    skill = skills.Skill("test", "Test", "Answer general office questions.", tmp_path, builtin=False)
     async def run():
-        return [e async for e in agent.run(skill, [{"role": "user", "content": "Find matching records"}])]
-
-    if accepted:
-        assert any(e.get("text") == "No matching records." for e in asyncio.run(run()))
-    else:
-        with pytest.raises(RuntimeError, match="could not read source"):
-            asyncio.run(run())
+        return [e async for e in agent.run(skill, [{"role": "user", "content": query}])]
+    result = asyncio.run(run())
+    assert len(seen) == 1
+    assert any(e.get("text") == "Here is the explanation." for e in result)
 
 
 @pytest.mark.parametrize("checkpoint", ["", '{"done":', "[]", '{"size":1,"done":null}'])

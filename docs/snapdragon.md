@@ -17,8 +17,11 @@ picker, and a private loopback Python service that stops when the app exits.
 | Images and charts | Qwen3-VL-4B-Instruct Q4_0 + F16 projector | GenieX llama.cpp, NPU |
 
 The app uses the verified GenieX 0.10.0 runtime, with `GGML_HEXAGON_DEVICES=HTP0`.
-Inference roles take turns in isolated worker processes, avoiding the X Elite
-second-session queue failure and collisions between GenieX and ONNX Runtime.
+Nomic stays loaded in its own worker alongside one generative model. Inference
+calls take turns under a shared lock; OCR/indexing and skill searches reuse both
+workers instead of reloading the weights at every embedding call. Generative
+role changes still replace the generative worker. Workers stop after idle time
+or a fatal native failure; recoverable request errors retain the loaded model.
 Host preprocessing, sampling and auxiliary vision operators may still use the CPU.
 The Nomic session requires NPU placement with CPU fallback disabled.
 The regular app keeps llama-server as its default on every platform. The
@@ -30,9 +33,9 @@ the separate setup; there is no automatic backend switch based on architecture.
 | | Existing Windows x64 | Windows ARM64 Snapdragon |
 |---|---|---|
 | Desktop | pywebview / WebView2; existing Inno Setup installer | Electron ARM64; source-checkout launcher |
-| Inference transport | OpenAI-compatible HTTP to a `llama-server.exe` per role | JSONL to one isolated Python worker using native runtime APIs |
+| Inference transport | OpenAI-compatible HTTP to a `llama-server.exe` per role | JSONL to isolated Python workers using native runtime APIs |
 | Runtime | Official llama.cpp build; CUDA 12.4 by default, CPU fallback; optional Vulkan/CPU builds | GenieX QAIRT for the assistant, GenieX llama.cpp Hexagon for OCR/vision, ONNX Runtime QNN for embeddings |
-| Scheduling | Servers start on demand and can stay loaded together | One model role at a time to avoid NPU session conflicts |
+| Scheduling | Servers start on demand and can stay loaded together | Resident embedder plus one generative model; serialized inference |
 | Model roles | Assistant (also handles images), OCR, embeddings | Assistant, OCR, embeddings, separate general vision role |
 
 The Qualcomm path does not launch `llama-server.exe`. OCR and general vision
@@ -54,6 +57,12 @@ Data is kept in `data/snapdragon/`, model downloads in `models/` and the GenieX
 cache, and runtime files in `build/geniex/`. These are excluded from Git. Documents
 stay on the computer. Setup and model downloads require an internet connection;
 normal inference uses local files. The preinstalled GenieX CLI is not modified.
+
+The runtime ZIP and AI Hub Nomic ZIP are checked against SHA-256 constants
+committed in `backend/app/provision.py` before extraction. The runtime pin is
+the v0.10.0 GitHub release asset digest; the Nomic pin covers the v0.65.0 ONNX
+archive. Setup revalidates older installs lacking the verification marker.
+Failed downloads cancel queued chunks and retain resumable progress.
 
 Windows ARM64 uses exact NumPy cosine search alongside SQLite FTS5 because
 sqlite-vec does not publish an ARM64 Windows wheel. This is suitable for small
@@ -84,6 +93,11 @@ Image understanding remains probabilistic: use the OCR/document workflow for
 exact transcription and verify cited source pages for important facts.
 Length-limited OCR is reported as an error rather than storing a partial page;
 split a dense page into smaller images and retry if it exceeds the model context.
+Other responses also signal length/context exhaustion. The requested output
+budget is bounded by available context, including image tokens. System prompts
+and tool schemas are protected; older tool results are shortened first. Invalid
+tool calls and schema output get at most two repair attempts with alternating
+assistant/user turns. OCR and table extraction use a neutral repetition penalty.
 
 ## Scope of the optional platform addition
 

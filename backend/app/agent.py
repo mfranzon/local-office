@@ -3,13 +3,11 @@ follows that skill's instructions, calling tools until it can answer. Routing wi
 English and Italian requests (0.5-0.8 s), against 13/18 for a 1.2B model."""
 import json
 import logging
-import re
 from collections.abc import AsyncIterator
 from datetime import date
 
 from . import llm, tools
 from .skills import Skill
-from .config import SNAPDRAGON
 
 log = logging.getLogger(__name__)
 MAX_STEPS = 10
@@ -71,7 +69,6 @@ async def run(skill: Skill, history: list[dict]) -> AsyncIterator[dict]:
     run_state = tools.Run()
     refs = f"\nThe skill has reference files you can read with read_skill_file: {', '.join(skill.references)}." if skill.references else ""
     request = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")[:300]
-    wants_file = SNAPDRAGON and bool(re.search(r"\b(excel|xlsx|word|docx|file|export|esporta)\b", request, re.I))
     messages = [{"role": "system", "content": SYSTEM.format(name=skill.name, today=date.today().isoformat(),
                                                             instructions=skill.instructions, references=refs, request=request)},
                 *history[-8:]]
@@ -83,31 +80,12 @@ async def run(skill: Skill, history: list[dict]) -> AsyncIterator[dict]:
     yield {"type": "skill", "name": skill.name}
 
     answer = ""
-    sources_checked = False
     for step in range(MAX_STEPS + 1):
         last = step == MAX_STEPS
         msg = await llm.complete("assistant", messages, max_tokens=2500, **llm.NO_THINK,
                                  **({} if last else {"tools": specs}))
         calls = msg.get("tool_calls") or []
-        if SNAPDRAGON and not calls and not last:
-            # Small local models sometimes narrate an action without calling it.
-            # Require actual source reads and requested exports before accepting
-            # the final answer; invented citations must never pass as evidence.
-            if not run_state.sources and not sources_checked:
-                messages.append({"role": "user", "content":
-                    "You have not read any source documents. Do not invent facts. Call list_documents, then read_document using a returned doc_id. "
-                    "Return only the next function call in <tool_call> tags, with its JSON name and arguments."})
-                continue
-            if not run_state.files and wants_file:
-                messages.append({"role": "user", "content":
-                    "The requested file does not exist yet. Call create_file now, using only the source data already read. "
-                    "Return the actual function call in <tool_call> tags, with its JSON name and arguments."})
-                continue
         if not calls or last:
-            if SNAPDRAGON and not run_state.sources and not sources_checked:
-                raise RuntimeError("The assistant could not read source documents for this skill. Please retry.")
-            if SNAPDRAGON and not run_state.files and wants_file:
-                raise RuntimeError("The assistant could not create the requested file. Please retry.")
             answer = msg.get("content") or ""
             break
         messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
@@ -122,10 +100,6 @@ async def run(skill: Skill, history: list[dict]) -> AsyncIterator[dict]:
                 result = skill.read_reference(str(args.get("path", "")))
             else:
                 result = await tools.call(run_state, name, args)
-            if SNAPDRAGON and not result.startswith("Error:") and (name in ("search_documents", "list_deadlines")
-                    or (name == "list_documents" and result == "No documents match.")):
-                sources_checked = True
-            sources_checked = sources_checked or bool(run_state.sources)
             messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
 
     yield {"type": "sources", "sources": run_state.sources}

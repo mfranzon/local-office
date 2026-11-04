@@ -15,7 +15,24 @@ import zipfile
 from .config import REPO, NO_WINDOW
 
 NOMIC_URL = "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/nomic_embed_text/releases/v0.65.0/nomic_embed_text-onnx-float.zip"
+# Reviewed pins: GenieX release asset digest and the AI Hub v0.65.0 archive.
+RUNTIME_SHA256 = "410dc39e79a6d0b7e8991bd4267285f7c73de7c46511a1fe0549b83dc4a26e4e"
+NOMIC_SHA256 = "67d7efd4841602a4a4d51339c71d8cfd6bff12da69fafa4b086836092458b1f0"
 _install_lock = threading.Lock()
+
+
+def verify_archive(path, expected):
+    with Path(path).open("rb") as file:
+        actual = hashlib.file_digest(file, "sha256").hexdigest()
+    if actual != expected:
+        raise RuntimeError(f"SHA256 mismatch for {Path(path).name}; remove the cached archive and retry setup")
+
+
+def verified_install(path, expected):
+    try:
+        return json.loads(Path(path).read_text()).get("sha256") == expected
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def download(url, dest):
@@ -48,17 +65,22 @@ def download(url, dest):
         done = set()
     lock = threading.Lock()
     last_progress = [0.0]
+    cancelled = threading.Event()
 
     def chunk(index):
         start = index * chunk_size
         end = min(size, start + chunk_size) - 1
         for attempt in range(4):
+            if cancelled.is_set():
+                return
             try:
                 req = urllib.request.Request(url, headers={"Range": f"bytes={start}-{end}"})
                 with urllib.request.urlopen(req, timeout=45) as response:
                     if response.status != 206:
                         raise RuntimeError("The model host did not honor a range request")
                     data = response.read()
+                if cancelled.is_set():
+                    return
                 if len(data) != end - start + 1:
                     raise RuntimeError("Incomplete asset chunk")
                 with part.open("r+b") as file:
@@ -74,12 +96,21 @@ def download(url, dest):
                         last_progress[0] = time.monotonic()
                 return
             except Exception:
-                if attempt == 3:
+                if attempt == 3 or cancelled.is_set():
                     raise
-                time.sleep(attempt + 1)
-    with ThreadPoolExecutor(max_workers=48) as pool:
-        for future in as_completed([pool.submit(chunk, i) for i in range(total) if i not in done]):
+                if cancelled.wait(attempt + 1):
+                    return
+    pool = ThreadPoolExecutor(max_workers=48)
+    futures = [pool.submit(chunk, i) for i in range(total) if i not in done]
+    try:
+        for future in as_completed(futures):
             future.result()
+    except BaseException:
+        cancelled.set()
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    else:
+        pool.shutdown(wait=True)
     part.replace(dest)
     state.unlink(missing_ok=True)
     return dest
@@ -100,18 +131,18 @@ def extract(archive, destination):
 
 def install_runtime():
     target = REPO / "build/geniex/lib"
-    if (target / "geniex.dll").is_file():
+    marker = target.parent / "source.json"
+    if (target / "geniex.dll").is_file() and verified_install(marker, RUNTIME_SHA256):
         return
     name = "geniex-sdk-windows-arm64-v0.10.0.zip"
     url = "https://github.com/qualcomm/GenieX/releases/download/v0.10.0/" + name
     archive = download(url, REPO / "build/downloads" / name)
-    expected = urllib.request.urlopen(url + ".sha256", timeout=30).read().decode().split()[0]
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != expected:
-        raise RuntimeError("GenieX runtime SHA256 mismatch")
+    verify_archive(archive, RUNTIME_SHA256)
     unpack = REPO / "build/geniex-sdk"
     extract(archive, unpack)
     lib = next(unpack.rglob("geniex.dll")).parent
     shutil.copytree(lib, target, dirs_exist_ok=True)
+    marker.write_text(json.dumps({"source": url, "sha256": RUNTIME_SHA256}))
 
 
 def install_model(spec):
@@ -123,11 +154,12 @@ def install_model(spec):
             return
         if spec.provider == "aihub":
             archive = download(NOMIC_URL, REPO / "build/downloads/nomic-embed-text-v0.65.0.zip")
+            verify_archive(archive, NOMIC_SHA256)
             extract(archive, EMBED_DIR)
             if not any(EMBED_DIR.rglob("tokenizer.json")):
                 from huggingface_hub import hf_hub_download
                 shutil.copy(hf_hub_download("google-bert/bert-base-uncased", "tokenizer.json"), EMBED_DIR / "tokenizer.json")
-            (EMBED_DIR / "source.json").write_text(json.dumps({"source": NOMIC_URL, "version": "0.65.0"}))
+            (EMBED_DIR / "source.json").write_text(json.dumps({"source": NOMIC_URL, "version": "0.65.0", "sha256": NOMIC_SHA256}))
         else:
             # A subprocess keeps native SDK initialization out of the API server.
             env = os.environ.copy()

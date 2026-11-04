@@ -1,10 +1,10 @@
-"""Snapdragon model assets and one isolated NPU worker at a time.
+"""Snapdragon assets and isolated workers, with serialized NPU execution.
 
-Serializing roles prevents GenieX/ONNX Runtime from competing for the single
-working Hexagon session. Native libraries never load in the UI/API process.
+Keep Nomic resident alongside one generative model, so OCR/indexing and skill
+searches do not repeatedly reload weights. Native libraries stay out of the API.
 """
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
@@ -17,10 +17,18 @@ from .config import LOGS_DIR, MODELS_DIR, NO_WINDOW, REPO
 CACHE = Path(os.environ.get("GENIEX_DATADIR", Path.home() / ".cache/geniex")) / "models"
 EMBED_DIR = MODELS_DIR / "nomic-embed-text"
 _lock = asyncio.Lock()
-_proc = None
-_role = None
-_key = None
-_last_used = 0.0
+IDLE_TIMEOUT = 300
+
+
+@dataclass
+class Worker:
+    proc: subprocess.Popen
+    role: str
+    key: str
+    last_used: float = 0.0
+
+
+_workers: dict[str, Worker] = {}
 
 
 def library_path():
@@ -42,7 +50,9 @@ def model_path(spec):
 def have(spec):
     path = model_path(spec)
     if spec.provider == "aihub":
-        return any(path.rglob("*.onnx")) and any(path.rglob("tokenizer.json"))
+        from .provision import verified_install, NOMIC_SHA256
+        return (verified_install(path / "source.json", NOMIC_SHA256)
+                and any(path.rglob("*.onnx")) and any(path.rglob("tokenizer.json")))
     if spec.provider == "geniex-qairt":
         manifest = path / "geniex.json"
         if not manifest.exists():
@@ -58,30 +68,42 @@ def have(spec):
     return path.is_file() and (not spec.mmproj or (CACHE / spec.repo / spec.mmproj).is_file())
 
 
-def shutdown():
-    global _proc, _role, _key
-    if _proc is not None:
-        if _proc.poll() is None:
-            _proc.terminate()
+def shutdown(slot=None):
+    """Synchronous teardown for process exit; async callers use a thread."""
+    for name in list(_workers):
+        if slot is not None and name != slot:
+            continue
+        worker = _workers.pop(name)
+        proc = worker.proc
+        if proc.poll() is None:
+            proc.terminate()
             try:
-                _proc.wait(timeout=5)
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                _proc.kill()
-                _proc.wait()
-        _proc = None
-    _role = _key = None
+                proc.kill()
+                proc.wait()
+        if proc.stdin:
+            proc.stdin.close()
+        if proc.stdout:
+            proc.stdout.close()
+
+
+async def ashutdown():
+    async with _lock:
+        await asyncio.to_thread(shutdown)
 
 
 def running():
-    return {_role: True} if _proc and _proc.poll() is None else {}
+    return {w.role: True for w in list(_workers.values()) if w.proc.poll() is None}
 
 
 def _start(spec):
-    global _proc, _role, _key
+    slot = "embed" if spec.role == "embed" else "generation"
     key = json.dumps(asdict(spec), sort_keys=True)
-    if _proc and _proc.poll() is None and _key == key:
-        return
-    shutdown()
+    worker = _workers.get(slot)
+    if worker and worker.proc.poll() is None and worker.key == key:
+        return worker
+    shutdown(slot)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env["GGML_HEXAGON_DEVICES"] = "HTP0"
@@ -92,42 +114,59 @@ def _start(spec):
     env["PYTHONUTF8"] = "1"
     env["PYTHONPATH"] = str(REPO / "backend")
     with (LOGS_DIR / f"npu-{spec.role}.log").open("a", encoding="utf-8") as log:
-        _proc = subprocess.Popen([sys.executable, "-u", "-m", "app.npu_worker"], cwd=REPO / "backend",
+        proc = subprocess.Popen([sys.executable, "-u", "-m", "app.npu_worker"], cwd=REPO / "backend",
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log,
                                  text=True, encoding="utf-8", errors="replace", env=env, **NO_WINDOW)
     if sys.platform == "win32":
         from .runtime import _kill_with_app
-        _kill_with_app(_proc)
-    _role, _key = spec.role, key
+        _kill_with_app(proc)
+    worker = _workers[slot] = Worker(proc, spec.role, key)
+    return worker
 
 
 async def events(spec, request):
-    global _last_used
     async with _lock:
         if not have(spec):
             raise RuntimeError(f"{spec.name} is not downloaded. Run Setup to install it.")
-        _start(spec)
-        _last_used = time.monotonic()
+        starting = asyncio.create_task(asyncio.to_thread(_start, spec))
         try:
-            _proc.stdin.write(json.dumps({"spec": asdict(spec), **request}) + "\n")
-            _proc.stdin.flush()
-            async with asyncio.timeout(300):
-                while True:
-                    line = await asyncio.to_thread(_proc.stdout.readline)
-                    if not line:
-                        raise RuntimeError(f"The {spec.role} worker stopped; see npu-{spec.role}.log")
-                    if not line.startswith("LO_EVENT:"):
-                        continue
-                    event = json.loads(line[len("LO_EVENT:"):])
-                    if event["type"] == "error":
-                        raise RuntimeError(event["message"])
-                    if event["type"] == "done":
-                        break
-                    yield event
-            _last_used = time.monotonic()
-        except BaseException:
-            shutdown()  # Cancellation must stop native generation before releasing the lock.
+            worker = await asyncio.shield(starting)
+        except asyncio.CancelledError:
+            # Do not release the lock while the startup thread mutates worker slots.
+            await starting
+            await asyncio.to_thread(shutdown, "embed" if spec.role == "embed" else "generation")
             raise
+        proc = worker.proc
+        worker.last_used = time.monotonic()
+        request_error = None
+        try:
+            proc.stdin.write(json.dumps({"spec": asdict(spec), **request}) + "\n")
+            proc.stdin.flush()
+            while True:
+                # Reset the idle timer on every event, not a fixed request deadline.
+                line = await asyncio.wait_for(asyncio.to_thread(proc.stdout.readline), IDLE_TIMEOUT)
+                if not line:
+                    raise RuntimeError(f"The {spec.role} worker stopped; see npu-{spec.role}.log")
+                marker = line.find("LO_EVENT:")
+                if marker < 0:
+                    continue
+                event, _ = json.JSONDecoder().raw_decode(line[marker + len("LO_EVENT:"):])
+                if event["type"] == "error":
+                    if event.get("fatal", True):
+                        raise RuntimeError(event["message"])
+                    request_error = event["message"]
+                elif event["type"] == "done":
+                    break
+                elif request_error is None:
+                    yield event
+            worker.last_used = time.monotonic()
+        except BaseException:
+            slot = "embed" if spec.role == "embed" else "generation"
+            await asyncio.to_thread(shutdown, slot)
+            raise
+        if request_error is not None:
+            # done was consumed: the native worker is safe to reuse after validation errors.
+            raise RuntimeError(request_error)
 
 
 async def complete(spec, messages, **params):
@@ -151,5 +190,9 @@ async def embed(spec, texts, query=False):
 
 
 async def reap():
-    if not _lock.locked() and time.monotonic() - _last_used > 180:
-        shutdown()
+    if _lock.locked():
+        return
+    async with _lock:
+        for slot, worker in list(_workers.items()):
+            if time.monotonic() - worker.last_used > 180:
+                await asyncio.to_thread(shutdown, slot)

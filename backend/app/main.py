@@ -29,6 +29,9 @@ async def lifespan(_):
     yield
     for t in tasks:
         t.cancel()
+    if SNAPDRAGON:
+        from . import npu
+        await npu.ashutdown()
     runtime.shutdown()
 
 
@@ -521,7 +524,7 @@ async def vision(image: UploadFile = File(...), messages: str = Form(...), mode:
                 yield {"type": "token", "text": text}
                 return
             msgs = [{"role": "system", "content": "Extract the tables from this OCR transcription. Copy values exactly; do not invent missing cells.\n\n" + text}, *plain_history]
-            async for token in llm.chat_stream(msgs, temperature=0):
+            async for token in llm.chat_stream(msgs, temperature=0, repetition_penalty=1.0):
                 yield {"type": "token", "text": token}
             return
         msgs = [{"role": "system", "content": rag.SYSTEM_PLAIN}, *history]

@@ -19,7 +19,12 @@ def test_qairt_state_is_reset_before_rendering_tools(monkeypatch):
         return "prompt"
     fake = SimpleNamespace(reset=reset, supports_thinking=False,
         tokenizer=SimpleNamespace(apply_chat_template=template),
-        generate=lambda *a, **k: SimpleNamespace(text="Done", profile=SimpleNamespace(stop_reason="eos")))
+        generate=lambda *a, **k: SimpleNamespace())
+    class Stream:
+        output = SimpleNamespace(text="Done", profile=SimpleNamespace(stop_reason="eos"))
+        def __iter__(self):
+            return iter(["Done"])
+    fake.generate = lambda *a, **k: Stream()
     monkeypatch.setattr(npu_worker, "_model", fake)
     monkeypatch.setattr(npu_worker, "_tokenizer", None)
     monkeypatch.setattr(npu_worker, "_spec", {"context": 4096})
