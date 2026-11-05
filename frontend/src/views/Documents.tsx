@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, CheckCircle2, FileSpreadsheet, FileText, FolderOpen, Loader2, MessageSquare, RotateCcw, Search, Trash2, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, FileSpreadsheet, FileText, FolderOpen, Presentation, Loader2, MessageSquare, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import { api, type Doc } from "../api";
 import { useI18n } from "../i18n";
 import Sources from "../components/Sources";
 
-const ACCEPT = ".pdf,.png,.jpg,.jpeg,.heic,.heif,.tif,.tiff,.webp,.bmp,.docx,.xlsx,.txt,.md,.csv";
+const ACCEPT = ".pdf,.png,.jpg,.jpeg,.heic,.heif,.tif,.tiff,.webp,.bmp,.docx,.xlsx,.pptx,.txt,.md,.csv";
 
 function useFileDrop(onFiles: (files: File[]) => void) {
   const [dragging, setDragging] = useState(false);
@@ -38,7 +38,7 @@ function useFileDrop(onFiles: (files: File[]) => void) {
 
 function Thumb({ doc }: { doc: Doc }) {
   const [failed, setFailed] = useState(false);
-  const Icon = doc.ext === ".xlsx" || doc.ext === ".csv" ? FileSpreadsheet : FileText;
+  const Icon = doc.ext === ".xlsx" || doc.ext === ".csv" ? FileSpreadsheet : doc.ext === ".pptx" ? Presentation : FileText;
   if (doc.pages_done > 0 && !failed)
     return <img src={api.pageUrl(doc.id, 1)} onError={() => setFailed(true)} alt="" className="w-11 h-14 object-cover object-top rounded border border-slate-200 bg-white" />;
   return <div className="w-11 h-14 rounded border border-slate-200 bg-slate-50 grid place-items-center text-slate-400"><Icon size={20} /></div>;

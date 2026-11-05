@@ -5,7 +5,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs, collect_submodules
 
 ROOT = Path(SPECPATH).parent
-datas = [(str(ROOT / "frontend/dist"), "ui"), (str(ROOT / "skills"), "skills")] + collect_data_files("docx") \
+datas = [(str(ROOT / "frontend/dist"), "ui"), (str(ROOT / "skills"), "skills")] + collect_data_files("docx") + collect_data_files("pptx") \
     + collect_data_files("pypdfium2_raw")
 WINDOWS = sys.platform == "win32"
 if WINDOWS:

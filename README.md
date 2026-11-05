@@ -6,7 +6,7 @@ Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photo
 
 ## Features
 
-- **Documents:** drag & drop PDFs, scans, photos (JPG, PNG, HEIC), TIFF, Word, Excel and text. Digital PDFs use their text layer; scans and photos go through OCR. Tables are kept.
+- **Documents:** drag & drop PDFs, scans, photos (JPG, PNG, HEIC), TIFF, Word, Excel, PowerPoint and text. Digital PDFs use their text layer; scans and photos go through OCR. Tables are kept.
 - **Folders:** connect local or shared folders; they stay in sync, strictly read-only.
 - **Skills:** folders with a `SKILL.md` ([Agent Skills format](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)) that teach the assistant an office task: deadline reports, invoice tables, Word reports, supplier checks. Ask normally and the right skill is picked, or type `/` to choose one. Skills read documents and the wiki and can create Word, Excel or Markdown files; they never send email, delete anything or run scripts. Create your own in the app or import a `SKILL.md` / `.zip`.
 - **Connected services:** connect remote [MCP](https://modelcontextprotocol.io) servers (mail, calendar, CRM, tickets…) in Settings, with an optional access token. The assistant uses them in plain questions and in skills, and cites their results. This is the one feature that sends data off the computer, so it's opt-in: only tools the server marks read-only start on, and you switch on any tool that sends, creates or deletes. Two public services that need no account are one click away: web search (Exa) and Microsoft Office help (Microsoft Learn).
