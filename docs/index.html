@@ -495,20 +495,20 @@
             <th scope="row">macOS<small>LocalOffice.dmg</small></th>
             <td><ul><li>Apple Silicon (M1 or later)</li><li>macOS 14 Sonoma or newer</li><li>16 GB memory, 24 GB for the best model</li></ul>
               <p class="small note">Open the .dmg and drag Local Office into Applications. If macOS warns on first open: System Settings, Privacy &amp; Security, <i>Open Anyway</i>.</p></td>
-            <td class="dl"><a class="button" data-asset="dmg" href="https://github.com/mfranzon/local-office/releases"><svg aria-hidden="true"><use href="#download"/></svg>Download .dmg</a><span class="small meta"></span></td>
+            <td class="dl"><a class="button" data-asset="dmg" href="https://github.com/mfranzon/local-office/releases/latest/download/LocalOffice.dmg"><svg aria-hidden="true"><use href="#download"/></svg>Download .dmg</a><span class="small meta"></span></td>
           </tr>
           <tr data-os="win">
             <th scope="row">Windows<small>LocalOffice-Setup.exe</small></th>
             <td><ul><li>Windows 10 or 11, x64</li><li>Uses an NVIDIA card if present, the CPU otherwise</li><li>No administrator rights needed</li></ul>
               <p class="small note">The installer isn't code-signed yet. If SmartScreen appears: <i>More info</i>, then <i>Run anyway</i>.</p></td>
-            <td class="dl"><a class="button" data-asset="exe" href="https://github.com/mfranzon/local-office/releases"><svg aria-hidden="true"><use href="#download"/></svg>Download .exe</a><span class="small meta"></span></td>
+            <td class="dl"><a class="button" data-asset="exe" href="https://github.com/mfranzon/local-office/releases/latest/download/LocalOffice-Setup.exe"><svg aria-hidden="true"><use href="#download"/></svg>Download .exe</a><span class="small meta"></span></td>
           </tr>
           <tr data-os="linux">
             <th scope="row">Linux<small>local-office_amd64.deb</small></th>
             <td><ul><li>Ubuntu 24.04 or compatible, x64</li><li>16 GB memory, a recent multi-core CPU</li><li>Uses the system GTK and WebKit</li></ul>
               <p class="note warn">CPU only: this package does not use your graphics card, even an NVIDIA one, so answers are noticeably slower. For CUDA, <a class="link" href="https://github.com/mfranzon/local-office#linux-ubuntu-2404">build from source</a>.</p>
               <p class="small note">Install with <code>sudo apt install ./local-office_*_amd64.deb</code>, then open it from your app menu.</p></td>
-            <td class="dl"><a class="button" data-asset="deb" href="https://github.com/mfranzon/local-office/releases"><svg aria-hidden="true"><use href="#download"/></svg>Download .deb</a><span class="small meta"></span></td>
+            <td class="dl"><a class="button" data-asset="deb" href="https://github.com/mfranzon/local-office/releases/latest"><svg aria-hidden="true"><use href="#download"/></svg>Download .deb</a><span class="small meta"></span></td>
           </tr>
         </tbody>
       </table>
@@ -572,6 +572,7 @@
   if (os) {
     hero.querySelector("span").textContent = LABEL[os];
     document.querySelector(`.platforms [data-os="${os}"]`)?.classList.add("mine");
+    hero.href = close.href = document.querySelector(`[data-asset="${ASSET[os]}"]`).href;   // works even if the API call below fails
   }
 
   const mb = n => (n / 1048576).toFixed(0) + " MB";
