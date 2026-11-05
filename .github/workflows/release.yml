@@ -91,6 +91,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || \
-            gh release create "$TAG" --title "Local Office ${TAG#v}" --generate-notes \
-              $([[ "$TAG" == v0.* ]] && echo --prerelease)
+            gh release create "$TAG" --title "Local Office ${TAG#v}" --generate-notes   # a full release: the landing page links to releases/latest
           gh release upload "$TAG" assets/* --clobber
