@@ -19,6 +19,8 @@ from docx import Document as Docx
 from openpyxl import load_workbook
 from PIL import Image, ImageOps
 from pillow_heif import register_heif_opener
+from pptx import Presentation
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from . import llm, models, wiki
 from .config import DATA_DIR
@@ -29,7 +31,7 @@ log = logging.getLogger(__name__)
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".heic", ".heif", ".tif", ".tiff", ".webp", ".bmp"}
 TEXT_EXTS = {".txt", ".md", ".csv"}
-SUPPORTED = IMAGE_EXTS | TEXT_EXTS | {".pdf", ".docx", ".xlsx"}
+SUPPORTED = IMAGE_EXTS | TEXT_EXTS | {".pdf", ".docx", ".xlsx", ".pptx"}
 OCR_SIDE = 1540            # LightOnOCR's recommended longest image side
 MIN_TEXT_LAYER = 80        # fewer chars than this on a PDF page means it's a scan -> OCR
 CHUNK_CHARS = 1200
@@ -74,12 +76,104 @@ def _image_pages(path: Path) -> Iterator[tuple[Image.Image, None]]:
             yield _fit(im.copy()), None
 
 
+_W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback"
+
+
+def _docx_runs(el) -> Iterator[str | None]:
+    """Text of a paragraph in order; None marks a page break (explicit, or where Word last laid out a new page)."""
+    for child in el:
+        tag = child.tag
+        if tag == _MC_FALLBACK:          # same content as the mc:Choice next to it
+            continue
+        if tag == _W + "t":
+            yield child.text or ""
+        elif tag in (_W + "tab", _W + "ptab"):
+            yield "\t"
+        elif tag == _W + "br":
+            yield None if child.get(_W + "type") == "page" else "\n"
+        elif tag == _W + "cr":
+            yield "\n"
+        elif tag == _W + "lastRenderedPageBreak":
+            yield None
+        else:
+            yield from _docx_runs(child)
+
+
+def _docx_table(tbl) -> str:
+    rows = []
+    for tr in tbl.iter(_W + "tr"):
+        cells = ["".join(t for t in _docx_runs(tc) if t).strip().replace("\n", " ") for tc in tr.iterchildren(_W + "tc")]
+        rows.append(" | ".join(cells))
+    return "\n".join(rows)
+
+
 def _docx_pages(path: Path) -> Iterator[tuple[None, str]]:
-    doc = Docx(path)
-    parts = [p.text for p in doc.paragraphs]
-    for table in doc.tables:
-        parts += [" | ".join(c.text.strip() for c in row.cells) for row in table.rows]
-    yield None, "\n".join(parts)
+    """One page per Word page, so citations point where the user will look. Paragraphs and tables stay in order.
+
+    Breaks come from explicit page breaks, 'page break before' and the page boundaries Word records when it saves;
+    files that carry none of these (some exporters) stay a single page.
+    """
+    page: list[str] = []
+
+    def flush():
+        text = "\n\n".join(page).strip()
+        page.clear()
+        return text
+
+    for el in Docx(path).element.body.iterchildren():
+        if el.tag == _W + "tbl":
+            page.append(_docx_table(el))
+        elif el.tag == _W + "p":
+            before = el.find(f"{_W}pPr/{_W}pageBreakBefore")
+            if before is not None and before.get(_W + "val", "1") not in ("0", "false", "off") and "".join(page).strip():
+                yield None, flush()
+            line = ""
+            for piece in _docx_runs(el):
+                if piece is None:
+                    if (line + "".join(page)).strip():   # an explicit break followed by Word's own marker is one break
+                        page.append(line)
+                        line = ""
+                        yield None, flush()
+                else:
+                    line += piece
+            page.append(line)
+    if "".join(page).strip():
+        yield None, flush()
+
+
+def _pptx_shape_text(shape) -> list[str]:
+    if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+        return [t for s in _reading_order(shape.shapes) for t in _pptx_shape_text(s)]
+    if getattr(shape, "has_table", False):
+        return ["\n".join(" | ".join(c.text.strip().replace("\n", " ") for c in row.cells) for row in shape.table.rows)]
+    if shape.has_text_frame and shape.text_frame.text.strip():
+        return [shape.text_frame.text.strip()]
+    return []
+
+
+def _reading_order(shapes):
+    return sorted(shapes, key=lambda s: ((s.top or 0) // 100000, s.left or 0))   # rows ~0.1 in apart, then left to right
+
+
+def _pptx_pages(path: Path) -> Iterator[tuple[Image.Image | None, str | None]]:
+    """One page per slide, empty ones included so page numbers match slide numbers. A slide with no text but a
+    picture (a scanned or screenshot slide) yields its largest picture for OCR."""
+    for slide in Presentation(path).slides:
+        parts = [t for s in _reading_order(slide.shapes) for t in _pptx_shape_text(s)]
+        if slide.has_notes_slide and (notes := slide.notes_slide.notes_text_frame.text.strip()):
+            parts.append(f"Notes: {notes}")
+        if not parts:
+            pictures = [s for s in slide.shapes if s.shape_type == MSO_SHAPE_TYPE.PICTURE]
+            if pictures:
+                pic = max(pictures, key=lambda s: (s.width or 0) * (s.height or 0))
+                try:
+                    with Image.open(io.BytesIO(pic.image.blob)) as im:
+                        yield _fit(im), None
+                    continue
+                except Exception:          # WMF/EMF and other formats Pillow can't open
+                    log.info("can't read picture on slide of %s", path.name)
+        yield None, "\n\n".join(parts)
 
 
 def _xlsx_pages(path: Path) -> Iterator[tuple[None, str]]:
@@ -101,7 +195,7 @@ def _pages(path: Path) -> Iterator[tuple[Image.Image | None, str | None]]:
         return _pdf_pages(path)
     if ext in IMAGE_EXTS:
         return _image_pages(path)
-    return {".docx": _docx_pages, ".xlsx": _xlsx_pages}.get(ext, _text_pages)(path)
+    return {".docx": _docx_pages, ".xlsx": _xlsx_pages, ".pptx": _pptx_pages}.get(ext, _text_pages)(path)
 
 
 def _count(path: Path) -> int:
@@ -111,6 +205,8 @@ def _count(path: Path) -> int:
     if ext in IMAGE_EXTS:
         with Image.open(path) as im:
             return getattr(im, "n_frames", 1)
+    if ext == ".pptx":
+        return len(Presentation(path).slides)
     return sum(1 for _ in _pages(path))
 
 
