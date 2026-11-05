@@ -209,6 +209,9 @@ def shutdown():
     if SNAPDRAGON:
         from . import npu
         npu.shutdown()
-    for srv in _servers.values():
-        stop(srv)
-    _servers.clear()
+    # Runs from both the server lifespan and the window thread at quit, so pop instead of iterating.
+    while _servers:
+        try:
+            stop(_servers.popitem()[1])
+        except KeyError:
+            break
