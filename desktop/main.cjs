@@ -63,7 +63,7 @@ async function start() {
     await new Promise(resolve => setTimeout(resolve, 200));
   }
   if (!ready) throw new Error('The local service did not start. See data\\snapdragon\\logs\\app.log.');
-  window = new BrowserWindow({ title: 'Local Office', width: 1360, height: 880,
+  window = new BrowserWindow({ title: 'Local Office', icon: path.join(root, 'docs', 'logo.png'), width: 1360, height: 880,
     minWidth: 1000, minHeight: 680, backgroundColor: '#f8fafc', autoHideMenuBar: true,
     show: false,
     webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true,

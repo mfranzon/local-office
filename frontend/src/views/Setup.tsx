@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { AlertCircle, Download, FileText, Loader2, ShieldCheck } from "lucide-react";
+import { AlertCircle, Download, Loader2, ShieldCheck } from "lucide-react";
+import Logo from "../components/Logo";
 import { api, stream, type SetupStatus } from "../api";
 import { useI18n } from "../i18n";
 
@@ -32,7 +33,7 @@ export default function Setup({ onDone }: { onDone: () => void }) {
     <div className="h-full grid place-items-center p-8">
       <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-sm p-10">
         <div className="flex items-center justify-between">
-          <div className="w-12 h-12 rounded-2xl bg-accent grid place-items-center text-white"><FileText size={24} /></div>
+          <Logo className="w-12 h-12 shrink-0" />
           <div className="flex rounded-md border border-slate-200 overflow-hidden text-xs">
             {(["it", "en"] as const).map((l) => (
               <button key={l} onClick={() => setLang(l)} className={`px-2.5 py-1 uppercase ${lang === l ? "bg-slate-800 text-white" : "hover:bg-slate-100"}`}>{l}</button>

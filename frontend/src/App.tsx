@@ -3,6 +3,7 @@ import { BookOpen, FileText, Image as ImageIcon, MessageSquare, Plug, Settings a
 import { api, type Doc, type Source } from "./api";
 import { useI18n } from "./i18n";
 import DocViewer from "./components/DocViewer";
+import Logo from "./components/Logo";
 import Documents from "./views/Documents";
 import Ask from "./views/Ask";
 import Images from "./views/Images";
@@ -81,7 +82,7 @@ function Shell() {
     <div className="flex h-full">
       <aside className="w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col">
         <div className="px-5 py-5 flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-accent grid place-items-center text-white"><FileText size={18} /></div>
+          <Logo className="w-8 h-8 shrink-0" />
           <span className="font-semibold text-lg tracking-tight">Local Office</span>
         </div>
         <nav className="px-3 space-y-1">
