@@ -39,6 +39,7 @@ jobs:
         with:
           name: dmg
           path: dist/LocalOffice.dmg
+          retention-days: 1   # only handed to the release job; the files live on the release
 
   exe:
     runs-on: windows-latest
@@ -59,6 +60,7 @@ jobs:
         with:
           name: exe
           path: dist/LocalOffice-Setup.exe
+          retention-days: 1   # only handed to the release job; the files live on the release
 
   deb:
     runs-on: ubuntu-24.04   # build_deb.sh targets Ubuntu 24.04's Python 3.12
@@ -76,6 +78,7 @@ jobs:
         with:
           name: deb
           path: dist/local-office_*_amd64.deb
+          retention-days: 1   # only handed to the release job; the files live on the release
 
   release:
     if: github.event_name != 'pull_request'
