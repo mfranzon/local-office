@@ -37,6 +37,35 @@ async def lifespan(_):
 
 app = FastAPI(title="Local Office", lifespan=lifespan)
 
+LOOPBACK = {"127.0.0.1", "localhost", "[::1]"}
+
+
+def _hostname(netloc: str) -> str:
+    return netloc.rsplit(":", 1)[0] if not netloc.endswith("]") else netloc
+
+
+class LocalOnly:
+    """Serve only the app's own window. The Host check blocks DNS rebinding (a web page reading the API through a
+    hostname that resolves to 127.0.0.1); the Origin check blocks cross-site requests such as a form POST to
+    /api/skills/import, which browsers send without a CORS preflight."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = {k.decode("latin-1"): v.decode("latin-1") for k, v in scope["headers"]}
+            host = headers.get("host", "").lower()
+            origin = headers.get("origin")
+            if _hostname(host) not in LOOPBACK:
+                return await Response("invalid host", 403)(scope, receive, send)
+            if origin is not None and origin.lower() not in (f"http://{host}", f"https://{host}"):
+                return await Response("cross-origin request refused", 403)(scope, receive, send)
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(LocalOnly)
+
 
 def sse(events):
     async def gen():
