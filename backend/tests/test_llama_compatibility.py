@@ -129,7 +129,7 @@ def test_mac_image_actions_keep_original_assistant_stream(monkeypatch, mode):
     monkeypatch.setattr(llm, "chat", unexpected_ocr)
     image = io.BytesIO()
     Image.new("RGB", (32, 32), "white").save(image, "PNG")
-    client = TestClient(main.app)  # No lifespan: this test does not load models.
+    client = TestClient(main.app, base_url="http://127.0.0.1")  # No lifespan: this test does not load models.
     response = client.post("/api/vision", files={"image": ("page.png", image.getvalue(), "image/png")},
         data={"mode": mode, "messages": json.dumps([{"role": "user", "content": "Read this image"}])})
     assert response.status_code == 200 and "Image answer" in response.text

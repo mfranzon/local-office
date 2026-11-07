@@ -9,7 +9,7 @@ from app import main
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(dbmod, "DATA_DIR", tmp_path)
     dbmod.init()
-    return TestClient(main.app)   # no context manager: the lifespan (model workers) isn't needed here
+    return TestClient(main.app, base_url="http://127.0.0.1")   # no context manager: the lifespan (model workers) isn't needed here
 
 
 def test_chats_are_saved_listed_reopened_and_deleted(client):
