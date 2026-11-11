@@ -1,23 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, Check, Download, FileText, Loader2, Plug, Plus, Trash2, Wand2, X } from "lucide-react";
+import { BookOpen, Download, FileText, Loader2, PenLine, Plug, Plus, Trash2, Wand2, X } from "lucide-react";
 import { api, stream, type ChatSummary, type Doc, type ExportFile, type Msg, type Source, type Step } from "../api";
 import { useI18n } from "../i18n";
 import Composer from "../components/Composer";
 import Markdown from "../components/Markdown";
+import Steps from "../components/Steps";
 
 interface Turn extends Msg { sources?: Source[]; error?: string; skill?: string; services?: boolean; steps?: Step[]; files?: ExportFile[] }
 
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
-function when(ts: string, lang: string) {
+export function when(ts: string, lang: string) {
   const d = new Date(ts.replace(" ", "T") + "Z");   // stored in UTC
   return d.toDateString() === new Date().toDateString()
     ? d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" })
     : d.toLocaleDateString(lang, { day: "numeric", month: "short" });
 }
 
-export default function Ask({ docs, scope, setScope, onSource, seed }: {
-  docs: Doc[]; scope: Doc | null; setScope: (d: Doc | null) => void; onSource: (s: Source) => void; seed?: { text: string };
+export default function Ask({ docs, scope, setScope, onSource, onDesk, seed }: {
+  docs: Doc[]; scope: Doc | null; setScope: (d: Doc | null) => void; onSource: (s: Source) => void;
+  onDesk: (file: ExportFile) => void; seed?: { text: string };
 }) {
   const { t, d, lang } = useI18n();
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -158,23 +160,7 @@ export default function Ask({ docs, scope, setScope, onSource, seed }: {
                         <Plug size={13} /> {t("using_services")}
                       </span>
                     )}
-                    {!!turn.steps?.length && (
-                      <ul className="mt-2 space-y-1 text-sm text-slate-500">
-                        {turn.steps.map((st, j) => {
-                          const running = !turn.content && phase !== "idle" && i === turns.length - 1 && j === turn.steps!.length - 1;
-                          const detail = st.tool === "read_document" ? docs.find((x) => x.id === st.detail)?.name ?? st.detail : st.detail;
-                          return (
-                            <li key={j} className="flex items-center gap-2 min-w-0">
-                              {running ? <Loader2 size={13} className="animate-spin text-accent shrink-0" /> : <Check size={13} className="text-emerald-600 shrink-0" />}
-                              <span className="shrink-0">{st.tool.includes("__")
-                                ? <span className="inline-flex items-center gap-1"><Plug size={12} className="text-amber-700" /> {st.tool.replace("__", " › ")}</span>
-                                : t(`step_${st.tool}` as never) || st.tool}</span>
-                              {detail && <span className="truncate text-slate-400">{detail}</span>}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
+                    {!!turn.steps?.length && <Steps steps={turn.steps} docs={docs} running={!turn.content && phase !== "idle" && i === turns.length - 1} />}
                   </div>
                 )}
                 {!turn.content && phase !== "idle" && i === turns.length - 1 && !turn.steps?.length && (
@@ -185,10 +171,14 @@ export default function Ask({ docs, scope, setScope, onSource, seed }: {
                 {!!turn.files?.length && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     {turn.files.map((f) => (
-                      <a key={f.url} href={f.url} download={f.name}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-medium hover:bg-emerald-100">
-                        <Download size={15} /> {t("download_file")} {f.name}
-                      </a>
+                      <span key={f.url} className="flex rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-medium overflow-hidden">
+                        <a href={f.url} download={f.name} className="flex items-center gap-2 px-3 py-2 hover:bg-emerald-100">
+                          <Download size={15} /> {t("download_file")} {f.name}
+                        </a>
+                        <button onClick={() => onDesk(f)} className="flex items-center gap-2 px-3 py-2 border-l border-emerald-200 hover:bg-emerald-100">
+                          <PenLine size={15} /> {t("desk_edit")}
+                        </button>
+                      </span>
                     ))}
                   </div>
                 )}

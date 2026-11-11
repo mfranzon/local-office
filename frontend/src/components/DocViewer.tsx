@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Copy, Download, MessageSquare, ScanText, Type, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Download, MessageSquare, PenLine, ScanText, Type, X } from "lucide-react";
 import { api, type Doc, type Page } from "../api";
 import { useI18n } from "../i18n";
 import type { ViewerTarget } from "../App";
 import Markdown from "./Markdown";
 
-export default function DocViewer({ target, onClose, onAsk }: {
-  target: ViewerTarget; onClose: () => void; onAsk: (doc: Doc) => void;
+export default function DocViewer({ target, onClose, onAsk, onDesk }: {
+  target: ViewerTarget; onClose: () => void; onAsk: (doc: Doc) => void; onDesk: (doc: Doc) => void;
 }) {
   const { t } = useI18n();
   const [doc, setDoc] = useState<(Doc & { pages: Page[] }) | null>(null);
@@ -37,6 +37,11 @@ export default function DocViewer({ target, onClose, onAsk }: {
             {doc && (
               <button onClick={() => onAsk(doc)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent text-white text-sm">
                 <MessageSquare size={15} /> {t("ask_this")}
+              </button>
+            )}
+            {doc?.status === "ready" && (
+              <button onClick={() => onDesk(doc)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-sm hover:bg-slate-50">
+                <PenLine size={15} /> {t("desk_edit")}
               </button>
             )}
             <a href={api.fileUrl(target.id)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-sm hover:bg-slate-50">

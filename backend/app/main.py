@@ -5,6 +5,7 @@ import re
 import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from . import agent, ingest, llm, mcp, models, rag, runtime, skills, sources, tools, wiki, wiki_views
+from . import agent, desk, ingest, llm, mcp, models, rag, runtime, sheet, skills, sources, tools, wiki, wiki_views
 from .config import ROLES, STATIC_DIR, SNAPDRAGON
 from .db import db, init
 
@@ -370,6 +371,134 @@ def download_export(run_id: str, filename: str):
     if tools.EXPORTS.resolve() not in path.parents or not path.is_file():
         raise HTTPException(404, "file not found")
     return FileResponse(path, filename=filename)
+
+
+# --- the Desk: files edited in the app, by the user and the assistant ---
+
+class DeskNew(BaseModel):
+    name: str
+    kind: str                         # doc | sheet
+
+
+class DeskCopy(BaseModel):
+    doc_id: str | None = None         # a document of the library
+    export: str | None = None         # a file a skill created: "<run id>/<filename>"
+
+
+class DeskSave(BaseModel):
+    name: str | None = None
+    content: str | list[list] | None = None
+
+
+class DeskShift(BaseModel):
+    axis: str                         # row | col
+    index: int                        # zero-based
+    delta: int                        # > 0 inserts before index, < 0 deletes from index
+
+
+class DeskChat(BaseModel):
+    messages: list[dict]
+    selection: dict | None = None     # document: {start, end, text} in blocks; sheet: {cell}
+
+
+def _desk_or_404(file_id: str) -> dict:
+    return desk.get(file_id) or _404()
+
+
+@app.get("/api/desk")
+def desk_list():
+    return desk.listing()
+
+
+@app.post("/api/desk")
+def desk_new(body: DeskNew):
+    if body.kind not in desk.EXPORTS:
+        raise HTTPException(400, "unknown kind of file")
+    return desk.get(desk.create(body.name, body.kind))
+
+
+@app.post("/api/desk/import")
+def desk_import(file: UploadFile = File(...)):
+    try:
+        return desk.get(desk.import_file(Path(file.filename or "file").name, file.file.read()))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception:
+        raise HTTPException(400, "this file can't be read")
+
+
+@app.post("/api/desk/copy")
+def desk_copy(body: DeskCopy):
+    """Puts a copy of a library document or of a file a skill created on the Desk. Scans, PDFs and slides, which
+    the Desk can't open as they are, become a document with the text that was read from their pages."""
+    try:
+        if body.export:
+            path = (tools.EXPORTS / body.export).resolve()
+            if tools.EXPORTS.resolve() not in path.parents or not path.is_file():
+                _404()
+            return desk.get(desk.import_file(path.name, path.read_bytes()))
+        with db() as conn:
+            doc = _doc_or_404(conn, body.doc_id or "")
+            pages = [r["text"] for r in conn.execute("SELECT text FROM pages WHERE doc_id=? ORDER BY n", (doc["id"],))]
+        if doc["ext"] in desk.IMPORTS:
+            return desk.get(desk.import_file(doc["name"], ingest.file_path(doc["id"], doc["ext"]).read_bytes()))
+        return desk.get(desk.create(Path(doc["name"]).stem, "doc", "\n\n".join(p.strip() for p in pages if p.strip())))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/desk/{file_id}")
+def desk_get(file_id: str):
+    return _desk_or_404(file_id)
+
+
+@app.put("/api/desk/{file_id}")
+def desk_save(file_id: str, body: DeskSave):
+    _desk_or_404(file_id)
+    try:
+        desk.save(file_id, body.name, body.content)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return desk.get(file_id)
+
+
+@app.post("/api/desk/{file_id}/shift")
+def desk_shift(file_id: str, body: DeskShift):
+    file = _desk_or_404(file_id)
+    if file["kind"] != "sheet" or body.axis not in ("row", "col") or body.index < 0 or not body.delta:
+        raise HTTPException(400, "rows and columns can be inserted or deleted in a sheet")
+    try:
+        desk.save(file_id, content=sheet.shift(file["content"], body.axis, body.index, body.delta))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return desk.get(file_id)
+
+
+@app.post("/api/desk/{file_id}/undo")
+def desk_undo(file_id: str):
+    desk.undo(file_id)
+    return _desk_or_404(file_id)
+
+
+@app.delete("/api/desk/{file_id}")
+def desk_delete(file_id: str):
+    desk.delete(file_id)
+    return {"ok": True}
+
+
+@app.get("/api/desk/{file_id}/export")
+def desk_export(file_id: str, format: str):
+    try:
+        name, data = desk.export(_desk_or_404(file_id), format)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return Response(data, media_type="application/octet-stream",
+                    headers={"Content-Disposition": f"attachment; filename*=utf-8''{quote(name)}"})
+
+
+@app.post("/api/desk/{file_id}/chat")
+async def desk_chat(file_id: str, body: DeskChat):
+    return sse(desk.assist(_desk_or_404(file_id), body.messages, body.selection))
 
 
 # --- saved conversations ---

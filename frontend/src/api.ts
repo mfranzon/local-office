@@ -39,6 +39,13 @@ export interface Connection {
 }
 export interface ExportFile { name: string; url: string }
 
+export interface DeskSummary { id: string; name: string; kind: "doc" | "sheet"; updated_at: string }
+export type Cell = string | number | boolean | null;
+/** A file on the Desk. A document's content is Markdown; a sheet's is rows of cells as typed, with `values`
+ *  holding what each cell shows (formulas computed). */
+export type DeskFile = DeskSummary & { can_undo: boolean }
+  & ({ kind: "doc"; content: string } | { kind: "sheet"; content: Cell[][]; values: Cell[][] });
+
 export interface Page {
   n: number;
   text: string;
@@ -131,6 +138,8 @@ export type StreamEvent =
   | { type: "services" }
   | ({ type: "step" } & Step)
   | ({ type: "file" } & ExportFile)
+  | { type: "edit" }
+  | { type: "draft"; key: string; start: number; end: number; text: string }
   | { type: "done" };
 
 async function json<T>(res: Response): Promise<T> {
@@ -198,6 +207,22 @@ export const api = {
     fetch(`/api/connections/${id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) }).then(json<Connection>),
   refreshConnection: (id: string) => post(`/api/connections/${id}/refresh`, {}) as Promise<Connection>,
   removeConnection: (id: string) => fetch(`/api/connections/${id}`, { method: "DELETE" }).then(json),
+  desk: () => fetch("/api/desk").then(json<DeskSummary[]>),
+  deskFile: (id: string) => fetch(`/api/desk/${id}`).then(json<DeskFile>),
+  deskNew: (name: string, kind: DeskSummary["kind"]) => post("/api/desk", { name, kind }) as Promise<DeskFile>,
+  deskImport: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return fetch("/api/desk/import", { method: "POST", body: form }).then(json<DeskFile>);
+  },
+  deskCopy: (from: { doc_id: string } | { export: string }) => post("/api/desk/copy", from) as Promise<DeskFile>,
+  deskSave: (id: string, patch: { name?: string; content?: string | Cell[][] }, keepalive = false) =>
+    fetch(`/api/desk/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch), keepalive }).then(json<DeskFile>),
+  deskShift: (id: string, axis: "row" | "col", index: number, delta: number) =>
+    post(`/api/desk/${id}/shift`, { axis, index, delta }) as Promise<DeskFile>,
+  deskUndo: (id: string) => post(`/api/desk/${id}/undo`, {}) as Promise<DeskFile>,
+  deskDelete: (id: string) => fetch(`/api/desk/${id}`, { method: "DELETE" }).then(json),
+  deskExportUrl: (id: string, format: string) => `/api/desk/${id}/export?format=${format}`,
   modelSettings: () => fetch("/api/settings/models").then(json<ModelSettings>),
   pageUrl: (id: string, n: number) => `/api/documents/${id}/pages/${n}.jpg`,
   fileUrl: (id: string) => `/api/documents/${id}/file`,

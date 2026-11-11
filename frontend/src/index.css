@@ -19,3 +19,30 @@ body { background: #f6f7f9; color: #1d2330; }
 .prose-answer th { background: #f0f2f6; }
 .prose-answer code { background: #f0f2f6; padding: 1px 4px; border-radius: 4px; }
 .prose-answer h1, .prose-answer h2, .prose-answer h3 { font-weight: 600; margin: 0.6em 0 0.3em; }
+
+/* the page of a Desk document */
+.desk-doc { outline: none; min-height: 60vh; line-height: 1.65; font-size: 15.5px; }
+.desk-doc > * + * { margin-top: 0.7em; }
+.desk-doc h1 { font-size: 1.9em; font-weight: 700; line-height: 1.2; letter-spacing: -0.01em; }
+.desk-doc h2 { font-size: 1.4em; font-weight: 600; line-height: 1.3; margin-top: 1.2em; }
+.desk-doc h3, .desk-doc h4 { font-size: 1.15em; font-weight: 600; margin-top: 1em; }
+.desk-doc ul, .desk-doc ol { padding-left: 1.5em; }
+.desk-doc ul { list-style: disc; }
+.desk-doc ol { list-style: decimal; }
+.desk-doc li > * + * { margin-top: 0.25em; }
+.desk-doc blockquote { border-left: 3px solid #d6dbe4; padding-left: 1em; color: #55607a; }
+.desk-doc a { color: var(--color-accent); text-decoration: underline; cursor: text; }
+.desk-doc code { background: #f0f2f6; padding: 1px 4px; border-radius: 4px; font-size: 0.9em; }
+.desk-doc pre { background: #f0f2f6; padding: 0.8em 1em; border-radius: 8px; overflow-x: auto; }
+.desk-doc pre code { background: none; padding: 0; }
+.desk-doc hr { border: 0; border-top: 1px solid #d6dbe4; margin: 1.4em 0; }
+.desk-doc table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+.desk-doc th, .desk-doc td { border: 1px solid #c9d0dc; padding: 5px 10px; vertical-align: top; text-align: left; position: relative; }
+.desk-doc th { background: #f0f2f6; font-weight: 600; }
+.desk-doc .selectedCell::after { content: ""; position: absolute; inset: 0; background: rgb(47 91 211 / 0.12); pointer-events: none; }
+
+/* the assistant typing in the page: its blocks are tinted, a labelled caret follows the last word */
+.desk-doc .ai-typing { background: rgb(47 91 211 / 0.07); box-shadow: -10px 0 0 rgb(47 91 211 / 0.07), 10px 0 0 rgb(47 91 211 / 0.07); border-radius: 2px; }
+.desk-doc .ai-caret { position: relative; margin: 0 -1px; border-left: 2px solid var(--color-accent); scroll-margin: 96px; pointer-events: none; }
+.desk-doc .ai-caret::after { content: attr(data-label); position: absolute; top: -1.5em; left: -2px; padding: 1px 5px; border-radius: 4px 4px 4px 0;
+  background: var(--color-accent); color: #fff; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; user-select: none; }

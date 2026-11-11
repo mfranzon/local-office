@@ -108,6 +108,16 @@ CREATE TABLE IF NOT EXISTS chats (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- the Desk: files the user and the assistant edit in the app
+CREATE TABLE IF NOT EXISTS desk_files (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,                          -- doc (content: Markdown) | sheet (content: JSON rows of cells)
+  content TEXT NOT NULL,
+  previous TEXT,                               -- content before the assistant's last run of changes, for undo
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 CREATE TABLE IF NOT EXISTS wiki_log (
   id INTEGER PRIMARY KEY,
   ts TEXT NOT NULL DEFAULT (datetime('now')),

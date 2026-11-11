@@ -8,7 +8,6 @@ import asyncio
 import re
 import uuid
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 from docx import Document as Docx
 from openpyxl import Workbook
@@ -42,9 +41,9 @@ SPECS = [
 ]
 
 
-def schemas(names: set[str] | None = None) -> list[dict]:
+def schemas(names: set[str] | None = None, specs: list[tuple] = SPECS) -> list[dict]:
     return [{"type": "function", "function": {"name": n, "description": d, "parameters": {
-        "type": "object", "properties": props, "required": req}}} for n, d, props, req in SPECS if names is None or n in names]
+        "type": "object", "properties": props, "required": req}}} for n, d, props, req in specs if names is None or n in names]
 
 
 class Run:
@@ -137,9 +136,12 @@ def _safe_name(filename: str, ext: str) -> str:
     return f"{stem[:80]}.{ext}"
 
 
-def markdown_to_docx(md: str, path: Path):
+def markdown_to_docx(md: str, path):
+    """Writes Markdown as a Word file: headings, bullet and numbered lists (three levels), tables, quotes, code,
+    and bold, italic and strikethrough text. `path` is a file path or a binary stream."""
     doc = Docx()
     table: list[list[str]] = []
+    code = False
 
     def flush():
         if table:
@@ -148,30 +150,56 @@ def markdown_to_docx(md: str, path: Path):
             t.style = "Table Grid"
             for i, r in enumerate(rows):
                 for j, c in enumerate(r):
-                    t.cell(i, j).text = c.strip()
+                    _runs(t.cell(i, j).paragraphs[0], c.strip())
             table.clear()
 
     for line in md.splitlines():
-        s = line.strip()
-        if s.startswith("|") and s.endswith("|"):
-            table.append(s.strip("|").split("|"))
+        s = line.strip().removesuffix("\\")           # a trailing backslash is a line break: the next line follows
+        if s.startswith("|") and s.endswith("|") and len(s) > 1 and not code:
+            table.append(re.split(r"(?<!\\)\|", s[1:-1]))
             continue
         flush()
-        if m := re.match(r"(#{1,4})\s+(.*)", s):
-            doc.add_heading(m[2], level=len(m[1]))
-        elif m := re.match(r"[-*]\s+(.*)", s):
-            _runs(doc.add_paragraph(style="List Bullet"), m[1])
+        level = min((len(line) - len(line.lstrip())) // 2, 2)
+        nested = f" {level + 1}" if level else ""
+        if s.startswith("```"):
+            code = not code
+        elif code:
+            doc.add_paragraph().add_run(line).font.name = "Courier New"
+        elif m := re.match(r"(#{1,6})\s+(.*)", s):
+            _runs(doc.add_heading("", level=len(m[1])), m[2])
+        elif m := re.match(r"[-*+]\s+(.*)", s):
+            _runs(doc.add_paragraph(style="List Bullet" + nested), m[1])
         elif m := re.match(r"\d+[.)]\s+(.*)", s):
-            _runs(doc.add_paragraph(style="List Number"), m[1])
-        elif s:
+            _runs(doc.add_paragraph(style="List Number" + nested), m[1])
+        elif m := re.match(r">\s?(.*)", s):
+            if m[1]:
+                _runs(doc.add_paragraph(style="Quote"), m[1])
+        elif s and not re.fullmatch(r"[-*_]{3,}", s):
             _runs(doc.add_paragraph(), s)
     flush()
     doc.save(path)
 
 
+_MARK = re.compile(r"(?<!\\)(\*{1,3}|~~|`)(?=\S)(.+?)(?<=\S)(?<!\\)\1")   # **bold**, *italic*, ***both***, ~~struck~~, `code`
+
+
 def _runs(paragraph, text: str):
-    for i, part in enumerate(re.split(r"\*\*(.+?)\*\*", text)):   # **bold**
-        paragraph.add_run(part).bold = i % 2 == 1
+    text = re.sub(r"(?<!\\)\[([^\]]+)\]\([^)\s]+\)", r"\1", text)   # a link keeps its text
+
+    def add(part: str, mark: str = ""):
+        if part:
+            run = paragraph.add_run(part if mark == "`" else re.sub(r"\\([\\`*_\[\]<>#|.)+-])", r"\1", part))
+            run.bold, run.italic = "**" in mark or None, mark in ("*", "***") or None
+            if mark == "~~":
+                run.font.strike = True
+            if mark == "`":
+                run.font.name = "Courier New"
+    pos = 0
+    for m in _MARK.finditer(text):
+        add(text[pos:m.start()])
+        add(m[2], m[1])
+        pos = m.end()
+    add(text[pos:])
 
 
 def create_file(run: Run, filename: str, format: str, content: str | None = None, rows: list | None = None) -> str:

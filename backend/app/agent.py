@@ -3,7 +3,7 @@ follows that skill's instructions, calling tools until it can answer. Routing wi
 English and Italian requests (0.5-0.8 s), against 13/18 for a 1.2B model."""
 import json
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date
 
 from . import llm, mcp, models, tools
@@ -113,41 +113,62 @@ async def run(skill: Skill | None, history: list[dict]) -> AsyncIterator[dict]:
     request = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")[:300]
     specs = tools.all_schemas()
     connected = len(specs) > len(tools.SPECS)
-    messages = [{"role": "system", "content": SYSTEM.format(
+    system = SYSTEM.format(
         name=skill.name if skill else SERVICES, today=date.today().isoformat(), references=refs, request=request,
-        instructions=skill.instructions if skill else SERVICES_INSTRUCTIONS, services=SERVICES_NOTE if connected else "")},
-                *history[-8:]]
+        instructions=skill.instructions if skill else SERVICES_INSTRUCTIONS, services=SERVICES_NOTE if connected else "")
     if skill and skill.references:
         specs.append({"type": "function", "function": {
             "name": "read_skill_file", "description": "Read one of the skill's reference files.",
             "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}})
     yield {"type": "skill", "name": skill.name} if skill else {"type": "services"}
 
+    async def call(name: str, args: dict) -> str:
+        if name == "read_skill_file":
+            return skill.read_reference(str(args.get("path", "")))
+        return await tools.call(run_state, name, args)
+
+    async for e in loop(lambda: system, history, specs, call):
+        if e["type"] == "token":
+            yield {"type": "sources", "sources": run_state.sources}
+        if e["type"] != "result":
+            yield e
+    for f in run_state.files:
+        yield {"type": "file", **f}
+
+
+async def loop(system: Callable[[], str], history: list[dict], specs: list[dict],
+               call: Callable[[str, dict], Awaitable[str]],
+               draft: Callable[[int, dict], list[dict]] | None = None) -> AsyncIterator[dict]:
+    """The assistant calls tools until it can answer. `system` is asked again before every step, so the prompt
+    can show state that the tools change (the file open on the Desk). With `draft`, the model's reply is followed
+    while it is being written: draft(step, reply so far) returns the events to show for it.
+    Streams events: those of `draft`, step (before a tool call), result (after it), and last token (the answer)."""
+    messages = [{"role": "system", "content": ""}, *history[-8:]]
     answer = ""
     for step in range(MAX_STEPS + 1):
         last = step == MAX_STEPS
+        messages[0]["content"] = system()
         _fit(messages, specs)
-        msg = await llm.complete("assistant", messages, max_tokens=ANSWER_TOKENS, **llm.NO_THINK,
-                                 **({} if last else {"tools": specs}))
+        params = {"max_tokens": ANSWER_TOKENS, **llm.NO_THINK, **({} if last else {"tools": specs})}
+        if draft:
+            msg = {}
+            async for msg in llm.complete_stream("assistant", messages, **params):
+                for e in draft(step, msg):
+                    yield e
+        else:
+            msg = await llm.complete("assistant", messages, **params)
         calls = msg.get("tool_calls") or []
         if not calls or last:
             answer = msg.get("content") or ""
             break
         messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
-        for call in calls:
-            name = call["function"]["name"]
+        for c in calls:
+            name = c["function"]["name"]
             try:
-                args = json.loads(call["function"].get("arguments") or "{}")
+                args = json.loads(c["function"].get("arguments") or "{}")
             except json.JSONDecodeError:
                 args = {}
             yield {"type": "step", "tool": name, "detail": _describe_call(args)}
-            if name == "read_skill_file":
-                result = skill.read_reference(str(args.get("path", "")))
-            else:
-                result = await tools.call(run_state, name, args)
-            messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
-
-    yield {"type": "sources", "sources": run_state.sources}
+            messages.append({"role": "tool", "tool_call_id": c.get("id", ""), "content": await call(name, args if isinstance(args, dict) else {})})
+            yield {"type": "result", "tool": name}
     yield {"type": "token", "text": answer.strip() or "(no answer)"}
-    for f in run_state.files:
-        yield {"type": "file", **f}

@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, FileText, Image as ImageIcon, MessageSquare, Plug, Settings as SettingsIcon, ShieldCheck, Wand2 } from "lucide-react";
+import { BookOpen, FileText, Image as ImageIcon, MessageSquare, PenLine, Plug, Settings as SettingsIcon, ShieldCheck, Wand2 } from "lucide-react";
 import { api, type Doc, type Source } from "./api";
 import { useI18n } from "./i18n";
 import DocViewer from "./components/DocViewer";
 import Logo from "./components/Logo";
 import Documents from "./views/Documents";
 import Ask from "./views/Ask";
+import Desk from "./views/Desk";
 import Images from "./views/Images";
 import Settings from "./views/Settings";
 import Wiki from "./views/Wiki";
 import Setup from "./views/Setup";
 import Skills from "./views/Skills";
 
-type View = "ask" | "docs" | "wiki" | "images" | "skills" | "settings";
+type View = "ask" | "docs" | "desk" | "wiki" | "images" | "skills" | "settings";
 export interface ViewerTarget { id: string; page: number }
 
 function useDocuments() {
@@ -54,6 +55,7 @@ function Shell() {
   const [viewer, setViewer] = useState<ViewerTarget | null>(null);
   const [wikiEntity, setWikiEntity] = useState<number | null>(null);
   const [seed, setSeed] = useState<{ text: string } | undefined>();
+  const [deskFile, setDeskFile] = useState<{ id: string } | null>(null);
   const { docs, refresh } = useDocuments();
   const { models, connected } = useModelStatus();
 
@@ -68,9 +70,13 @@ function Shell() {
     if (s.kind === "wiki") { setWikiEntity(s.entity_id); setView("wiki"); }
     else if (s.doc_id) setViewer({ id: s.doc_id, page: s.page ?? 1 });
   };
+  /** Opens a copy of a library document, or of a file a skill created, on the Desk. */
+  const toDesk = (from: { doc_id: string } | { export: string }) =>
+    api.deskCopy(from).then((f) => { setDeskFile({ id: f.id }); setViewer(null); setView("desk"); }).catch((e) => alert((e as Error).message));
   const nav: [View, string, typeof FileText][] = [
     ["ask", t("nav_ask"), MessageSquare],
     ["docs", t("nav_docs"), FileText],
+    ["desk", t("nav_desk"), PenLine],
     ["wiki", t("nav_wiki"), BookOpen],
     ["images", t("nav_images"), ImageIcon],
     ["skills", t("nav_skills"), Wand2],
@@ -123,14 +129,17 @@ function Shell() {
       <main className="flex-1 min-w-0 overflow-hidden">
         {view === "docs" && <Documents docs={docs} refresh={refresh} onOpen={(id) => setViewer({ id, page: 1 })} onAsk={askAbout} />}
         {/* always mounted: the conversation (and an answer still being written) survives switching views */}
-        <div className={view === "ask" ? "h-full" : "hidden"}><Ask docs={docs} scope={scope} setScope={setScope} onSource={openSource} seed={seed} /></div>
+        <div className={view === "ask" ? "h-full" : "hidden"}><Ask docs={docs} scope={scope} setScope={setScope} onSource={openSource} seed={seed}
+          onDesk={(f) => toDesk({ export: f.url.replace("/api/exports/", "") })} /></div>
+        {/* always mounted too: what is being typed gets saved, and the assistant keeps working on the open file */}
+        <div className={view === "desk" ? "h-full" : "hidden"}><Desk docs={docs} open={deskFile} onSource={openSource} /></div>
         {view === "wiki" && <Wiki entityId={wikiEntity} setEntityId={setWikiEntity} onOpenDoc={(id, page) => setViewer({ id, page })} />}
         {view === "images" && <Images refreshDocs={refresh} />}
         {view === "skills" && <Skills onTry={(name) => { setSeed({ text: `/${name} ` }); setView("ask"); }} />}
         {view === "settings" && <Settings />}
       </main>
 
-      {viewer && <DocViewer target={viewer} onClose={() => setViewer(null)} onAsk={askAbout} />}
+      {viewer && <DocViewer target={viewer} onClose={() => setViewer(null)} onAsk={askAbout} onDesk={(doc) => toDesk({ doc_id: doc.id })} />}
     </div>
   );
 }

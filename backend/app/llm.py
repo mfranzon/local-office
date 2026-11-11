@@ -32,6 +32,34 @@ async def complete(role: str, messages: list[dict], **params) -> dict:
     return r.json()["choices"][0]["message"]
 
 
+async def complete_stream(role: str, messages: list[dict], **params) -> AsyncIterator[dict]:
+    """complete(), but the reply is yielded while it is being written: the same dict, growing, and whole at the
+    last yield. A tool call's arguments arrive as unfinished JSON text."""
+    if SNAPDRAGON:
+        yield await complete(role, messages, **params)
+        return
+    msg = {"content": "", "tool_calls": []}
+    body = {"messages": messages, "temperature": 0, "stream": True, **params}
+    async with _http.stream("POST", f"{await url(role)}/chat/completions", json=body) as r:
+        if r.is_error:
+            await r.aread()
+            r.raise_for_status()
+        async for line in r.aiter_lines():
+            if not line.startswith("data: ") or line == "data: [DONE]":
+                continue
+            delta = (json.loads(line[6:]).get("choices") or [{}])[0].get("delta") or {}
+            msg["content"] += delta.get("content") or ""
+            for d in delta.get("tool_calls") or []:
+                while len(msg["tool_calls"]) <= d.get("index", 0):
+                    msg["tool_calls"].append({"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                call, fn = msg["tool_calls"][d.get("index", 0)], d.get("function") or {}
+                call["id"] = d.get("id") or call["id"]
+                call["function"]["name"] += fn.get("name") or ""
+                call["function"]["arguments"] += fn.get("arguments") or ""
+            yield msg
+    yield msg
+
+
 async def chat_stream(messages: list[dict], **params) -> AsyncIterator[str]:
     if SNAPDRAGON:
         from . import npu

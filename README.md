@@ -1,6 +1,6 @@
 # Local Office
 
-Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photos and Office files, then ask questions and get answers that cite the exact page. A built-in wiki (your "second brain") compiles what your documents say about companies, people and deadlines. Everything runs on the Mac, and no file leaves the computer.
+Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photos and Office files, then ask questions and get answers that cite the exact page. A built-in wiki (your "second brain") compiles what your documents say about companies, people and deadlines, and the Desk lets you write documents and spreadsheets with the assistant. Everything runs on the Mac, and no file leaves the computer.
 
 ![Ask your documents](docs/screenshots/ask.png)
 
@@ -10,6 +10,7 @@ Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photo
 - **Folders:** connect local or shared folders; they stay in sync, strictly read-only.
 - **Skills:** folders with a `SKILL.md` ([Agent Skills format](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview)) that teach the assistant an office task: deadline reports, invoice tables, Word reports, supplier checks. Ask normally and the right skill is picked, or type `/` to choose one. Skills read documents and the wiki and can create Word, Excel or Markdown files; they never send email, delete anything or run scripts. Create your own in the app or import a `SKILL.md` / `.zip`.
 - **Connected services:** connect remote [MCP](https://modelcontextprotocol.io) servers (mail, calendar, CRM, tickets…) in Settings, with an optional access token. The assistant uses them in plain questions and in skills, and cites their results. This is the one feature that sends data off the computer, so it's opt-in: only tools the server marks read-only start on, and you switch on any tool that sends, creates or deletes. Two public services that need no account are one click away: web search (Exa) and Microsoft Office help (Microsoft Learn).
+- **Desk:** write documents and spreadsheets in the app, with the assistant next to the file. Start a new file, open a Word, Excel, CSV or text file (the Desk works on a copy), or continue from a library document or a file a skill created. Ask for a change ("make the payment terms more formal", "make a table of the invoices in my documents") and it appears in the file, with one click to undo it. Spreadsheets compute formulas; files download as Word, Excel, Markdown or CSV.
 - **Ask:** answers cite the page they come from; click a citation to open the page. Conversations are saved and can be reopened.
 - **Wiki:** pages for organizations, people and projects, built from the documents. Every fact links to its source page. Conflicting values (e.g. two VAT numbers) and likely duplicates go to a review list. Exports to Obsidian.
 - **Images:** describe photos, read charts, extract tables.
@@ -19,6 +20,10 @@ Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photo
 | A skill at work | Skills | Wiki |
 |---|---|---|
 | ![Invoice table skill](docs/screenshots/skill-run.png) | ![Skills](docs/screenshots/skills.png) | ![Wiki](docs/screenshots/wiki.png) |
+
+![The Desk: a Word file edited with the assistant](docs/screenshots/desk.png)
+
+*The Desk: the assistant added the summary and rewrote the payment terms. [Watch the 2-minute walkthrough](docs/demo/desk.mp4).*
 
 ## Example: check a supplier before the contract renews
 
@@ -69,6 +74,7 @@ Local Office.app
 - **Search:** pages are split into chunks and embedded. Vector search (sqlite-vec) and keyword search (FTS5) are combined.
 - **Wiki:** the assistant extracts facts into a fixed JSON schema. Code then checks every fact against the source text (names, identifiers and dates must appear in it), resolves entities by name and VAT/tax code, and merges them.
 - **Skills:** the assistant first picks a skill from names and descriptions only (18/18 correct on an English and Italian test set, 0.5–0.8 s), then follows the skill's instructions with tool calls (search, list and read documents, wiki pages, deadlines, create file). Answers cite their sources.
+- **Desk:** a document is stored as Markdown and a spreadsheet as rows of cells. The assistant edits numbered blocks of a document or cells of a sheet, and sees the result before its next step. Document edits are streamed into the page as they are written, and the content before the first change is kept for undo. Word and Excel files are converted on the way in and out: formatting Markdown can't express (fonts, colours, images) is not kept, and a workbook opens with its first sheet.
 - **Models:** files are downloaded from Hugging Face with resume. A model switch runs download → start → test → swap, and the current model stays if any step fails.
 
 ## Build
@@ -96,7 +102,7 @@ Running from source needs a `llama-server` binary: `packaging/build_llama.sh` bu
 
 ```
 backend/app/     FastAPI app: ingest (OCR, chunking), rag, wiki, sources (folders), skills + agent + tools,
-                 models + runtime (llama-server supervisor), desktop entry point
+                 desk + sheet (files edited in the app), models + runtime (llama-server supervisor), desktop entry point
 skills/          built-in skills (SKILL.md), bundled with the app
 backend/tests/   pytest suite (no models needed)
 frontend/src/    React + Vite + Tailwind UI (views/, components/, i18n.tsx)
