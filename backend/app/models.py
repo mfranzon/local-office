@@ -8,6 +8,7 @@ import asyncio
 import io
 import re
 import shutil
+from pathlib import Path
 from collections.abc import AsyncIterator
 from dataclasses import asdict, dataclass
 
@@ -69,6 +70,8 @@ class Spec:
 
     @property
     def downloaded(self) -> bool:
+        if self.provider == "server":
+            return True
         if self.provider != "llama":
             from . import npu
             return npu.have(self)
@@ -166,6 +169,30 @@ async def resolve_custom(role: str, text: str) -> Spec:
     return Spec(role, repo, file, mmproj, name=file.removesuffix(".gguf"), size_mb=size, **defaults)
 
 
+def is_server(ref: str) -> bool:
+    return bool(re.match(r"https?://(?!(hf\.co|huggingface\.co)/)", ref.strip(), re.I))
+
+
+async def external(role: str, text: str) -> Spec:
+    """'http://127.0.0.1:8080' -> Spec for an OpenAI-compatible server already running on this computer (Lucebox,
+    vLLM, another llama-server). Local Office neither starts nor stops it."""
+    if role != "assistant":
+        raise RuntimeError("only the assistant can use an external server")
+    base = text.strip().rstrip("/")
+    base = base if base.endswith("/v1") else base + "/v1"
+    if httpx.URL(base).host not in ("127.0.0.1", "localhost", "::1"):
+        raise RuntimeError("the server must run on this computer (127.0.0.1 or localhost), so documents never leave it")
+    try:
+        r = await _http.get(f"{base}/models")
+    except httpx.TransportError:
+        raise RuntimeError(f"no server answers at {base}: start it, then try again") from None
+    try:
+        name = Path(str(r.json()["data"][0]["id"])).name   # servers that load one file report its path
+    except (ValueError, LookupError, TypeError):
+        name = ""
+    return Spec(role, base, "", name=name or base, provider="server")
+
+
 _active: dict[str, Spec] = {}
 
 
@@ -189,6 +216,8 @@ async def url(role: str) -> str:
     spec = active(role)
     if not spec.downloaded:
         raise RuntimeError(f"the {role} model is not downloaded yet")
+    if spec.provider == "server":
+        return spec.repo
     return await runtime.ensure(role, spec.ref, spec.args)
 
 
@@ -292,6 +321,16 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
         if role == "embed":
             async for ev in reindex(spec, facts["dim"]):
                 yield ev
+        yield {"type": "switched", "role": role, "model": asdict(spec)}
+        return
+    if is_server(ref):
+        spec = await external(role, ref)
+        yield {"type": "progress", "step": "test"}
+        await test(spec, spec.repo)
+        with db() as conn:
+            set_setting(conn, f"model.{role}", asdict(spec))
+        _active[role] = spec
+        runtime.release(role)
         yield {"type": "switched", "role": role, "model": asdict(spec)}
         return
     spec = spec or await resolve_custom(role, ref)

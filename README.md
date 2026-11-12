@@ -15,6 +15,7 @@ Private AI for the office, as a native Mac app. Drop in paper scans, PDFs, photo
 - **Wiki:** pages for organizations, people and projects, built from the documents. Every fact links to its source page. Conflicting values (e.g. two VAT numbers) and likely duplicates go to a review list. Exports to Obsidian.
 - **Images:** describe photos, read charts, extract tables.
 - **Models for your Mac:** the app picks the best models for the Mac's memory. You can switch any of them in Settings, including any GGUF model from Hugging Face. Each model is tested before it's switched on.
+- **Your own inference server:** the assistant can use an OpenAI-compatible server already running on the same computer (for example [Lucebox](https://github.com/Luce-Org/lucebox) on AMD or NVIDIA GPUs) instead of the bundled llama-server: in Settings, enter its address, e.g. `http://127.0.0.1:8080`. Only local addresses are accepted, so documents still never leave the computer. OCR and the search index keep their bundled models.
 - **Italian and English** interface.
 
 | A skill at work | Skills | Wiki |

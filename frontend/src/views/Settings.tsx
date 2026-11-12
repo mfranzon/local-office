@@ -73,14 +73,14 @@ function RoleCard({ role, data, ramGb, diskGb, run, busy, onSwitch }: {
 
       <div className="divide-y divide-slate-100 border-t border-slate-100">
         {data.choices.map((spec) => <Option key={spec.ref} spec={spec} />)}
-        {(!data.active.provider || data.active.provider === "llama") && <div className={`px-4 py-3 ${selected === "custom" ? "bg-accent-soft/50" : ""}`}>
+        {["llama", "server"].includes(data.active.provider || "llama") && <div className={`px-4 py-3 ${selected === "custom" ? "bg-accent-soft/50" : ""}`}>
           <label className="flex items-center gap-3 cursor-pointer">
             <input type="radio" name={role} checked={selected === "custom"} onChange={() => setSelected("custom")} disabled={!!running} className="accent-[#2f5bd3] w-4 h-4" />
-            <span className="font-medium">{t("custom_model")}</span>
+            <span className="font-medium">{t(role === "assistant" ? "custom_model_assistant" : "custom_model")}</span>
             {!inCatalog && <span className="ml-auto flex items-center gap-1 text-xs text-emerald-700 font-medium"><CheckCircle2 size={14} /> {t("in_use")}</span>}
           </label>
           {selected === "custom" && (
-            <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={t("custom_hint")} disabled={!!running}
+            <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder={t(role === "assistant" ? "custom_hint_assistant" : "custom_hint")} disabled={!!running}
               className="mt-2 ml-7 w-[calc(100%-1.75rem)] px-3 py-2 rounded-lg border border-slate-200 text-sm font-mono outline-none focus:border-accent" />
           )}
         </div>}

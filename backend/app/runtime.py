@@ -187,6 +187,11 @@ def adopt(role: str, srv: Server):
         stop(old)
 
 
+def release(role: str):
+    """Stops the role's server now: the role moved to an external server."""
+    stop(_servers.pop(role, None))
+
+
 def running() -> dict[str, bool]:
     return {role: s.proc.poll() is None for role, s in _servers.items()}
 

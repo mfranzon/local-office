@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Local Office: private AI for office paperwork</title>
-<meta name="description" content="Ask questions about scans, PDFs and Office files and get answers that cite the exact page. The AI runs on your computer and no file leaves it. Free for Mac, Windows and Linux.">
+<title>Local Office: private AI for office paperwork, on your own computer</title>
+<meta name="description" content="Ask your scans, PDFs and Office files a question and get an answer that cites the exact page. The AI runs on your own computer, so no file ever leaves it. Free and open source for Mac, Windows and Linux.">
 <meta property="og:title" content="Local Office">
-<meta property="og:description" content="Private AI for office paperwork. Answers cite the exact page, and no file leaves your computer.">
+<meta property="og:description" content="Ask your paperwork anything. Every answer cites its page, and no file leaves your computer.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://mfranzon.com/local-office/">
 <meta property="og:image" content="https://mfranzon.com/local-office/screenshots/ask.png">
@@ -26,7 +26,6 @@
     --cyan: #a4f6f8;
     --orange: #f9a21f;
     --ink: #0a0a0a;
-    --muted: #4a3d10;
     --accent: #2f5bd3;
     --accent-hover: #2149b4;
     --accent-ink: #ffffff;
@@ -68,6 +67,7 @@
   p { max-width: 62ch; text-wrap: pretty; }
   b, strong { font-weight: 500; }
   .nums { font-variant-numeric: tabular-nums; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
   .wrap { padding-inline: var(--margin); }
   .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: var(--gutter); }
@@ -116,6 +116,7 @@
   .masthead .standfirst { margin-top: 2rem; max-width: 40ch; }
   .ph-badge { justify-self: start; margin-top: 1.25rem; }
   .ph-badge img { display: block; max-width: 100%; height: auto; }
+  #hero-note { margin-top: 1rem; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; margin-top: 1.75rem; }
   .masthead .side { align-self: end; display: grid; gap: 0.35rem; padding-bottom: 0.4rem; }
   .masthead .side p { max-width: 30ch; }
@@ -179,6 +180,7 @@
   .block + .block { margin-top: 42vh; }
   .block h3 { font-family: var(--font-text); font-weight: 500; font-size: var(--step-lead); line-height: 1.2; letter-spacing: -0.01em; max-width: 22ch; }
   .block p { margin-top: 1rem; max-width: 44ch; }
+  .block .more { margin-top: 0.75rem; }
   .block .shot { display: none; }
   .controls { display: inline-flex; margin-top: 1.5rem; background: #f1f1ef; }
   .controls button { min-height: 2.75rem; padding: 0 1.1rem; font-size: var(--step-small); font-weight: 500; transition: background-color 180ms ease, color 180ms ease; }
@@ -258,7 +260,7 @@
   .faq h2 { grid-column: 1 / 4; }
   .faq .answers { grid-column: 5 / 13; columns: 2; column-gap: 3.5rem; }
   .faq .answers p { break-inside: avoid; margin-bottom: 1.25rem; max-width: 38ch; line-height: 1.55; }
-  .faq .answers b { font-weight: 500; }
+  .faq .answers b { display: block; font-weight: 500; margin-bottom: 0.2rem; }
   @media (max-width: 860px) {
     .faq h2, .faq .answers { grid-column: 1 / -1; }
     .faq .answers { margin-top: 2rem; column-gap: 2rem; }
@@ -318,9 +320,9 @@
   <div class="bar">
     <a class="brand" href="#top" id="top"><svg aria-hidden="true"><use href="#logo"/></svg>Local Office</a>
     <nav aria-label="Main">
-      <a href="#demo">Demo</a>
-      <a href="#features">Features</a>
-      <a href="#inside">How it works</a>
+      <a href="#demo">See it work</a>
+      <a href="#features">What it does</a>
+      <a href="#inside">Under the hood</a>
       <a href="https://github.com/mfranzon/local-office">GitHub</a>
       <a class="button" href="#download">Download</a>
     </nav>
@@ -329,24 +331,24 @@
   <div class="mosaic">
     <figure class="m-ask"><img src="screenshots/ask.png" width="2560" height="1600" alt="Local Office answering 'When is the Northwind payment due?' with two invoice due dates, each with a numbered citation."></figure>
     <figure class="m-scan"><img src="sources/invoice-nw-2026-118.jpg" width="1240" height="1754" alt="The top of scanned invoice NW-2026-118 from Northwind Components Ltd."></figure>
-    <div class="m-fact"><p>No file leaves your computer</p></div>
+    <div class="m-fact"><p>No file ever leaves your computer</p></div>
     <figure class="m-wiki"><img src="screenshots/wiki.png" width="2560" height="1600" alt="The wiki page for Northwind Components Ltd, with facts linked to their source documents."></figure>
   </div>
 
   <div class="grid masthead">
     <div class="side">
-      <p data-rise style="--i:3">Free and open source, MIT licence.</p>
-      <p data-rise style="--i:4">For Mac, Windows and Linux. Works offline after a one-time model download.</p>
+      <p data-rise style="--i:3">Free and open source. No account, no subscription.</p>
+      <p data-rise style="--i:4">For Mac, Windows and Linux. Works offline once the models are downloaded.</p>
       <a class="ph-badge" data-rise style="--i:5" href="https://www.producthunt.com/products/local-office?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-local-office" target="_blank" rel="noopener noreferrer"><img alt="Local Office - Private AI for office paperwork | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1305269&amp;theme=light&amp;t=1793955866706"></a>
     </div>
     <div class="main">
-      <h1 class="display" data-rise style="--i:0">Private AI for office paperwork</h1>
-      <p class="lead standfirst" data-rise style="--i:1">Ask your scans, PDFs and Office files in plain words. Every answer cites its page, and the AI runs on your own computer.</p>
+      <h1 class="display" data-rise style="--i:0">Paperwork that answers back</h1>
+      <p class="lead standfirst" data-rise style="--i:1">Local Office reads your scans, PDFs and Office files, then answers in plain words and shows the page each answer came from. The AI runs on your own computer, so nothing is uploaded.</p>
       <div class="actions" data-rise style="--i:2">
         <a class="button" id="hero-dl" href="#download"><svg aria-hidden="true"><use href="#download"/></svg><span>Download for free</span></a>
-        <a class="link" href="#demo">Watch a real run</a>
+        <a class="link" href="#demo">See it catch a mistake</a>
       </div>
-      <p class="small" id="hero-note" style="margin-top:1rem"></p>
+      <p class="small" id="hero-note"></p>
     </div>
   </div>
 </header>
@@ -355,11 +357,11 @@
 <section class="showcase wrap" aria-labelledby="digit">
   <div class="grid top">
     <h2 class="head" id="digit" data-reveal>One digit apart</h2>
-    <p data-reveal style="--i:1">In the demo run below, the contract with Northwind Components Ltd gives the VAT number GB 284 7391 56. The purchase order for the same supplier says GB 284 7391 65. Local Office read both files side by side, put the two numbers next to each other and said not to renew until someone checked.</p>
+    <p data-reveal style="--i:1">The contract with Northwind Components Ltd gives the VAT number GB 284 7391 56. The purchase order for the same supplier says GB 284 7391 65. It is the kind of slip nobody spots on a busy afternoon. In the run below, Local Office read both files, set the two numbers side by side and said not to renew until someone had checked.</p>
   </div>
   <div class="grid specimens" aria-label="The two VAT numbers' last digits">
-    <div class="specimen" data-reveal style="--i:1"><p>VAT on the contract, GB 284 7391</p><span class="nums">56</span></div>
-    <div class="specimen" data-reveal style="--i:2"><p>VAT on the purchase order, GB 284 7391</p><span class="nums">65</span></div>
+    <div class="specimen" data-reveal style="--i:1"><p>On the contract: GB 284 7391</p><span class="nums">56</span></div>
+    <div class="specimen" data-reveal style="--i:2"><p>On the purchase order: GB 284 7391</p><span class="nums">65</span></div>
   </div>
 </section>
 
@@ -372,11 +374,11 @@
       </figure>
     </div>
     <div class="main">
-      <h2 class="head" id="demo-h" data-reveal>A real supplier check</h2>
-      <p class="lead" data-reveal style="--i:1">A small studio's files on one supplier: a service agreement, two scanned invoices, a purchase order and meeting minutes. With them loaded, one question.</p>
+      <h2 class="head" id="demo-h" data-reveal>One question, five files</h2>
+      <p class="lead" data-reveal style="--i:1">Everything a small studio keeps on one supplier: a service agreement, two scanned invoices, a purchase order and meeting minutes. Then a single request:</p>
       <div data-reveal style="--i:2">
         <video src="demo/supplier-check.mp4" poster="demo/supplier-check-poster.jpg" width="1440" height="900" autoplay muted loop playsinline preload="metadata" aria-label="Screen recording of the supplier-check skill running in Local Office"></video>
-        <p class="small note">Recorded on an Apple M5 Mac with Qwen3.5 9B. The 83-second run is sped up 12 times.</p>
+        <p class="small note">A real run, recorded on an Apple M5 Mac with Qwen3.5 9B. The 83 seconds are sped up 12 times.</p>
       </div>
       <blockquote class="prompt" data-reveal>“Check Northwind before we renew the contract”</blockquote>
       <dl class="answer" data-reveal style="--i:1">
@@ -388,7 +390,7 @@
         <div><dt>To check</dt><dd><p>VAT GB 284 7391 <b>56</b> on the contract against <b>65</b> on the order, and “Northwind Components Ltd” against “Northwind Ltd”.</p></dd></div>
         <div><dt>Public news</dt><dd><p>None for this company. The web hits were about a different “North Wind”, so they are left out.</p></dd></div>
       </dl>
-      <p data-reveal>The facts come from files that stay on the computer. The only thing sent outside was one optional web search for the company's name, with no amounts and no people.</p>
+      <p data-reveal>Every fact above comes from files that never left the computer, and each chip opens the page it was read from. The one thing sent out was an optional web search for the company's name: no amounts, no people.</p>
     </div>
   </div>
 </section>
@@ -401,6 +403,7 @@
       <img data-shot="ask-it" src="screenshots/ask-it.png" width="2560" height="1600" loading="lazy" alt="The same kind of question asked in Italian, answered in Italian with citations.">
       <img data-shot="skill-run" src="screenshots/skill-run.png" width="2560" height="1600" loading="lazy" alt="The invoice-table skill listing and reading documents, then producing an Excel file.">
       <img data-shot="skills" src="screenshots/skills.png" width="2560" height="1600" loading="lazy" alt="The skills library with built-in office skills that can be switched on and off.">
+      <img data-shot="desk" src="screenshots/desk.png" width="1440" height="900" loading="lazy" alt="The Desk: a service agreement open for editing, with the assistant's summary added at the top and the payment terms rewritten.">
       <img data-shot="wiki" src="screenshots/wiki.png" width="2560" height="1600" loading="lazy" alt="The wiki page for a supplier, every fact linked to its source.">
       <img data-shot="settings" src="screenshots/settings.png" width="2560" height="1600" loading="lazy" alt="Settings showing the local models chosen for this computer.">
     </div>
@@ -408,32 +411,39 @@
   <div class="reading">
     <h2 class="head" id="features-h" data-reveal>What it does</h2>
     <div class="block" data-block="documents">
-      <h3 data-reveal>Reads any paper you have</h3>
-      <p data-reveal style="--i:1">PDFs, scans, phone photos (JPG, PNG, HEIC), TIFF, Word, Excel, PowerPoint and text. Digital PDFs use their text layer; scans and photos are read with OCR on the computer, and tables are kept. Connected folders stay in sync and are only ever read.</p>
+      <h3 data-reveal>Reads the paperwork you already have</h3>
+      <p data-reveal style="--i:1">Drop in PDFs, scans, phone photos (JPG, PNG, HEIC), TIFF, Word, Excel, PowerPoint and text. Scans and photos are read with OCR on your computer, and tables stay tables. Connect a folder and it stays in sync; Local Office only ever reads it.</p>
       <figure class="shot"><img src="screenshots/documents.png" width="2560" height="1600" loading="lazy" alt=""></figure>
       <div class="controls" data-reveal style="--i:2"><button type="button" data-show="documents" aria-pressed="true">Documents</button></div>
     </div>
     <div class="block" data-block="ask">
-      <h3 data-reveal>Answers with the page it came from</h3>
-      <p data-reveal style="--i:1">Ask in plain words, in English or Italian. Each claim carries a numbered citation; open it and the source page appears. Conversations are saved and can be reopened.</p>
+      <h3 data-reveal>Shows the page behind every answer</h3>
+      <p data-reveal style="--i:1">Ask in plain words, in English or Italian. Each claim carries a numbered citation: click it and the source page opens, so checking takes a second. Conversations are saved for when you come back.</p>
       <figure class="shot"><img src="screenshots/ask.png" width="2560" height="1600" loading="lazy" alt=""></figure>
       <div class="controls" role="group" aria-label="Interface language" data-reveal style="--i:2"><button type="button" data-show="ask" aria-pressed="false">English</button><button type="button" data-show="ask-it" aria-pressed="false">Italiano</button></div>
     </div>
     <div class="block" data-block="skill-run">
       <h3 data-reveal>Turns a question into a finished file</h3>
-      <p data-reveal style="--i:1">Skills are folders with a <code>SKILL.md</code> that teach the assistant an office task: deadline reports, invoice tables, Word reports, supplier checks. Ask normally and the right one is picked. They write Word, Excel or Markdown files, and never send email, delete anything or run scripts.</p>
+      <p data-reveal style="--i:1">Skills teach the assistant an office task: deadline reports, invoice tables, Word reports, supplier checks. Ask normally and the right one is picked. A skill is a folder with a <code>SKILL.md</code>, so you can write your own. Skills create Word, Excel or Markdown files, and never send email, delete anything or run scripts.</p>
       <figure class="shot"><img src="screenshots/skill-run.png" width="2560" height="1600" loading="lazy" alt=""></figure>
       <div class="controls" role="group" aria-label="Skills view" data-reveal style="--i:2"><button type="button" data-show="skill-run" aria-pressed="false">A skill at work</button><button type="button" data-show="skills" aria-pressed="false">The library</button></div>
     </div>
+    <div class="block" data-block="desk">
+      <h3 data-reveal>Writes and edits alongside you</h3>
+      <p data-reveal style="--i:1">The Desk is a place to write documents and spreadsheets with the assistant next to the file. Ask for a change, such as “make the payment terms more formal” or “make a table of the invoices in my documents”, and it appears in the file, with one click to undo it. Opened Word and Excel files are edited as a copy, so the original is never touched.</p>
+      <p class="small more" data-reveal style="--i:1"><a class="link" href="demo/desk.mp4">Watch the 2-minute walkthrough</a></p>
+      <figure class="shot"><img src="screenshots/desk.png" width="1440" height="900" loading="lazy" alt=""></figure>
+      <div class="controls" data-reveal style="--i:2"><button type="button" data-show="desk" aria-pressed="false">Desk</button></div>
+    </div>
     <div class="block" data-block="wiki">
-      <h3 data-reveal>Keeps a wiki of who is who</h3>
-      <p data-reveal style="--i:1">Pages for organisations, people and projects, built from your documents. Names, identifiers and dates are checked against the source text, and every fact links to its page. Conflicting values and likely duplicates wait for your review. Exports to Obsidian.</p>
+      <h3 data-reveal>Keeps track of who's who</h3>
+      <p data-reveal style="--i:1">A wiki builds itself from your documents, with a page for each organisation, person and project. Names, identifiers and dates are checked against the source text, and every fact links to its page. Conflicting values and likely duplicates wait for your review. Exports to Obsidian.</p>
       <figure class="shot"><img src="screenshots/wiki.png" width="2560" height="1600" loading="lazy" alt=""></figure>
       <div class="controls" data-reveal style="--i:2"><button type="button" data-show="wiki" aria-pressed="false">Wiki</button></div>
     </div>
     <div class="block" data-block="settings">
-      <h3 data-reveal>Fits the computer it runs on</h3>
-      <p data-reveal style="--i:1">The app picks models for the machine's memory and graphics card. Swap any of them in Settings, including any GGUF model from Hugging Face. Each is downloaded, started and tested before it takes over.</p>
+      <h3 data-reveal>Tunes itself to your computer</h3>
+      <p data-reveal style="--i:1">Local Office picks models to suit your memory and graphics card. Prefer another? Swap any of them in Settings, including any GGUF model from Hugging Face. A new model is downloaded, started and tested before it takes over.</p>
       <figure class="shot"><img src="screenshots/settings.png" width="2560" height="1600" loading="lazy" alt=""></figure>
       <div class="controls" data-reveal style="--i:2"><button type="button" data-show="settings" aria-pressed="false">Settings</button></div>
     </div>
@@ -441,36 +451,36 @@
 </section>
 
 <section class="stages wrap" aria-labelledby="stages-h">
-  <h2 class="display" id="stages-h" data-reveal>From download to answer</h2>
+  <h2 class="display" id="stages-h" data-reveal>From download to first answer</h2>
   <div class="bar-diagram" data-ui data-reveal style="--i:1">
-    <div class="seg seg-1"><strong>A minute</strong><p>First, install it like any other app.</p></div>
-    <div class="seg seg-2"><strong>Minutes, once</strong><p>Then it downloads the models picked for your computer: 5 to 8.5 GB, one time only.</p></div>
-    <div class="seg seg-3"><strong>Seconds a page</strong><p>Next, drop in files. Scans and photos are read with OCR, on the computer.</p></div>
-    <div class="seg seg-4"><strong>Seconds</strong><p>Finally, ask. The answer cites its pages.</p></div>
+    <div class="seg seg-1"><strong>A minute</strong><p>Install it like any other app.</p></div>
+    <div class="seg seg-2"><strong>Minutes, once</strong><p>It downloads the models picked for your computer: 5 to 8.5 GB, one time only. After that it works offline.</p></div>
+    <div class="seg seg-3"><strong>Seconds a page</strong><p>Drop in your files. Scans and photos are read with OCR, on your computer.</p></div>
+    <div class="seg seg-4"><strong>Seconds</strong><p>Ask. The answer cites its pages.</p></div>
   </div>
   <div class="clauses" aria-hidden="true">
-    <p data-reveal style="--i:2">First, install it like any other app.</p>
-    <p data-reveal style="--i:3">Then it downloads the models picked for your computer: 5 to 8.5 GB, one time only. After that it works offline.</p>
-    <p data-reveal style="--i:4">Next, drop in files. Scans and photos are read with OCR, on the computer.</p>
-    <p data-reveal style="--i:5">Finally, ask. The answer cites its pages.</p>
+    <p data-reveal style="--i:2">Install it like any other app.</p>
+    <p data-reveal style="--i:3">It downloads the models picked for your computer: 5 to 8.5 GB, one time only. After that it works offline.</p>
+    <p data-reveal style="--i:4">Drop in your files. Scans and photos are read with OCR, on your computer.</p>
+    <p data-reveal style="--i:5">Ask. The answer cites its pages.</p>
   </div>
 </section>
 
 <section class="inside wrap" id="inside" aria-labelledby="inside-h">
   <div class="grid">
     <div class="side">
-      <p class="small" data-reveal style="--i:2"><b>Opt-in only.</b> Connected services (MCP servers for mail, calendar, CRM or web search) are the one feature that sends data off the computer. You add them in Settings; only tools a server marks read-only start switched on.</p>
+      <p class="small" data-reveal style="--i:2"><b>The one exception, and it is opt-in.</b> Connected services (MCP servers for mail, calendar, CRM or web search) are the only feature that sends data off the computer. You add them yourself in Settings, and only tools a server marks read-only start switched on.</p>
     </div>
     <div class="main">
-      <h2 class="head" id="inside-h" data-reveal>Everything runs inside</h2>
+      <h2 class="head" id="inside-h" data-reveal>Everything runs on your machine</h2>
       <div class="cols">
-        <p data-reveal style="--i:1"><b>A native window.</b> A React interface in the system's web view: WebKit on Mac and Linux, WebView2 on Windows. No browser tab, no account, no subscription.</p>
-        <p data-reveal style="--i:2"><b>A local backend.</b> Reading, OCR, hybrid search (vectors and keywords), the wiki and skills, on a private localhost port. Files and the index live in one SQLite database on your disk.</p>
+        <p data-reveal style="--i:1"><b>A native window.</b> A real desktop app, not a browser tab: a React interface in the system's web view, WebKit on Mac and Linux, WebView2 on Windows.</p>
+        <p data-reveal style="--i:2"><b>A local backend.</b> Reading, OCR, hybrid search (vectors and keywords), the wiki and skills all run on a private localhost port. Your files and the index live in one SQLite database on your disk.</p>
         <p data-reveal style="--i:3"><b>Local models.</b> One llama.cpp server per role, started on first use and stopped when idle. Metal on a Mac, CUDA on an NVIDIA card, the CPU otherwise.</p>
       </div>
       <div class="scroll-x" data-reveal style="--i:4">
         <table class="models">
-          <caption class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Models chosen by memory</caption>
+          <caption class="sr-only">Models chosen by memory</caption>
           <thead><tr><th scope="col">Role</th><th scope="col">24 GB memory or more</th><th scope="col">16 GB memory</th></tr></thead>
           <tbody>
             <tr><td>Answers, chat, images, skills</td><td>Qwen3.5 9B</td><td>Qwen3.5 4B</td></tr>
@@ -490,9 +500,9 @@
     </div>
     <div class="main">
       <h2 class="head" id="get-h" data-reveal>Download Local Office</h2>
-      <p class="lead" data-reveal style="--i:1" >Free and open source. On first launch it downloads the models chosen for your computer, once.</p>
+      <p class="lead" data-reveal style="--i:1" >Free, with no account to create. On first launch it downloads the models chosen for your computer, once, and then works offline.</p>
       <table class="platforms" data-reveal style="--i:2">
-        <thead><tr><th scope="col">System</th><th scope="col">Needs</th><th scope="col"><span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Download</span></th></tr></thead>
+        <thead><tr><th scope="col">System</th><th scope="col">Needs</th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
         <tbody>
           <tr data-os="mac">
             <th scope="row">macOS<small>LocalOffice.dmg</small></th>
@@ -523,14 +533,15 @@
   <div class="grid">
     <h2 class="head" id="faq-h">Questions</h2>
     <div class="answers">
-      <p><b>Does any of my data leave the computer?</b> No. Documents, the database, the wiki and the models all stay on your machine. The one exception is connected services (MCP), which you switch on yourself in Settings and which show exactly which tools they can use.</p>
+      <p><b>Does any of my data leave the computer?</b> No. Documents, the database, the wiki and the models all stay on your machine. The one exception is connected services (MCP), which are off until you add them in Settings, where you can see exactly which tools each one can use.</p>
       <p><b>Do I need an internet connection?</b> Only once, to download the models on first launch (5 to 8.5 GB depending on the computer). After that Local Office works fully offline.</p>
-      <p><b>How accurate are the answers?</b> Local models are small and can make mistakes. That is why every answer cites the page it comes from, and every wiki fact links to its source and can be rejected or edited.</p>
+      <p><b>How accurate are the answers?</b> Local models are small and can make mistakes. That is why every answer cites the page it comes from, so you can check it in one click, and why every wiki fact links to its source and can be rejected or edited.</p>
       <p><b>Where are my files stored?</b> On a Mac in <code>~/Library/Application Support/Local Office/</code>, on Windows in <code>%LOCALAPPDATA%\Local Office\</code>, on Linux in <code>~/.local/share/local-office/</code>. Connected folders are only read, never changed.</p>
       <p><b>Which languages does it speak?</b> The interface is in English and Italian. Documents can be in any language the models read, and you can ask in either.</p>
       <p><b>Does the Linux package use my GPU?</b> No. The .deb runs the models on the CPU only, so it works on any x64 machine but answers more slowly. To use an NVIDIA card, build Local Office from source: the build detects CUDA and compiles GPU support for it.</p>
       <p><b>Can I use a different model?</b> Yes. Any role can be switched in Settings, including any GGUF model from Hugging Face. A switch downloads, starts and tests the new model, and the current one stays if any step fails.</p>
       <p><b>Can I teach it my own tasks?</b> Yes. Write a skill in the app, or import a <code>SKILL.md</code> or a <code>.zip</code> in the Agent Skills format. Skills can read documents and the wiki and create files, nothing more.</p>
+      <p><b>Can it edit my Word and Excel files?</b> Yes, on the Desk. It works on a copy, so the original stays as it was, and every change the assistant makes can be undone. Formatting that Markdown cannot express, such as fonts, colours and images, is not kept, and a workbook opens with its first sheet.</p>
       <p><b>How much does it cost?</b> Nothing. Local Office is MIT-licensed. The models keep their own licences: Qwen3.5, Qwen3-Embedding and LightOnOCR-2 are Apache 2.0.</p>
     </div>
   </div>
@@ -539,7 +550,7 @@
 <section class="close wrap" aria-labelledby="close-h">
   <h2 id="close-h">Ask away. Nothing leaves.</h2>
   <div class="row">
-    <p>Download it, drop in a folder of scans and contracts, and ask your first question in a few minutes.</p>
+    <p>Download it, drop in a folder of scans and contracts, and ask your first question a few minutes from now.</p>
     <a class="button" id="close-dl" href="#download"><svg aria-hidden="true"><use href="#download"/></svg><span>Download Local Office</span></a>
   </div>
 </section>
@@ -547,11 +558,11 @@
 
 <footer class="wrap">
   <div class="top">
-    <p class="small">Local Office, private AI for office paperwork. Free under the MIT licence.</p>
+    <p class="small">Local Office: private AI for office paperwork. Free and open source under the MIT licence.</p>
     <a class="link small" href="#top">Back to top</a>
   </div>
   <div>
-    <h2 class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Source code</h2>
+    <h2 class="sr-only">Source code</h2>
     <a class="contact" href="https://github.com/mfranzon/local-office"><span>mfranzon/</span><span>local-office</span></a>
     <div class="meta small">
       <div><a class="link" href="https://github.com/mfranzon/local-office/releases">Releases</a><a class="link" href="https://github.com/mfranzon/local-office/issues">Report an issue</a></div>
