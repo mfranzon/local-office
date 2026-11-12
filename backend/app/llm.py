@@ -14,6 +14,18 @@ _http = httpx.AsyncClient(timeout=httpx.Timeout(600, connect=5))
 NO_THINK = {"chat_template_kwargs": {"enable_thinking": False}}
 
 
+def body_for(spec, body: dict) -> dict:
+    """The request as the role's server expects it. Servers the user runs differ from llama-server: they serve the
+    model named in the request, colibri switches thinking off with a top-level enable_thinking (found by the test
+    at switch time) and refuses token penalties."""
+    if spec.provider != "server":
+        return body
+    body = {k: v for k, v in body.items() if k != "repetition_penalty"}
+    if "enable_thinking" in spec.flags and "chat_template_kwargs" in body:
+        body.update(body.pop("chat_template_kwargs"))
+    return {**body, "model": spec.file} if spec.file else body
+
+
 def image_part(data: bytes, mime: str = "image/jpeg") -> dict:
     return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64.b64encode(data).decode()}"}}
 
@@ -27,7 +39,8 @@ async def complete(role: str, messages: list[dict], **params) -> dict:
     if SNAPDRAGON:
         from . import npu
         return await npu.complete(active(role), messages, **params)
-    r = await _http.post(f"{await url(role)}/chat/completions", json={"messages": messages, "temperature": 0, **params})
+    r = await _http.post(f"{await url(role)}/chat/completions",
+                         json=body_for(active(role), {"messages": messages, "temperature": 0, **params}))
     r.raise_for_status()
     return r.json()["choices"][0]["message"]
 
@@ -39,7 +52,7 @@ async def complete_stream(role: str, messages: list[dict], **params) -> AsyncIte
         yield await complete(role, messages, **params)
         return
     msg = {"content": "", "tool_calls": []}
-    body = {"messages": messages, "temperature": 0, "stream": True, **params}
+    body = body_for(active(role), {"messages": messages, "temperature": 0, "stream": True, **params})
     async with _http.stream("POST", f"{await url(role)}/chat/completions", json=body) as r:
         if r.is_error:
             await r.aread()
@@ -70,7 +83,7 @@ async def chat_stream(messages: list[dict], **params) -> AsyncIterator[str]:
             if event["type"] == "token":
                 yield event["text"]
         return
-    body = {"messages": messages, "stream": True, "temperature": 0.3, **NO_THINK, **params}
+    body = body_for(active("assistant"), {"messages": messages, "stream": True, "temperature": 0.3, **NO_THINK, **params})
     async with _http.stream("POST", f"{await url('assistant')}/chat/completions", json=body) as r:
         r.raise_for_status()
         async for line in r.aiter_lines():
