@@ -10,7 +10,7 @@ import re
 import shutil
 from pathlib import Path
 from collections.abc import AsyncIterator
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
@@ -41,6 +41,8 @@ class Spec:
 
     @property
     def ref(self) -> str:
+        if self.provider == "server":
+            return self.repo            # the address; file is the model the server reports
         return f"{self.repo}/{self.file}".rstrip("/")
 
     @property
@@ -175,7 +177,7 @@ def is_server(ref: str) -> bool:
 
 async def external(role: str, text: str) -> Spec:
     """'http://127.0.0.1:8080' -> Spec for an OpenAI-compatible server already running on this computer (Lucebox,
-    vLLM, another llama-server). Local Office neither starts nor stops it."""
+    colibri, vLLM, another llama-server). Local Office neither starts nor stops it."""
     if role != "assistant":
         raise RuntimeError("only the assistant can use an external server")
     base = text.strip().rstrip("/")
@@ -187,10 +189,31 @@ async def external(role: str, text: str) -> Spec:
     except httpx.TransportError:
         raise RuntimeError(f"no server answers at {base}: start it, then try again") from None
     try:
-        name = Path(str(r.json()["data"][0]["id"])).name   # servers that load one file report its path
+        model = str(r.json()["data"][0]["id"])
     except (ValueError, LookupError, TypeError):
-        name = ""
-    return Spec(role, base, "", name=name or base, provider="server")
+        model = ""
+    # servers that load one file report its path as the model
+    return Spec(role, base, model, name=Path(model).name or base, provider="server")
+
+
+async def tested(spec: Spec) -> Spec:
+    """The external server's spec with the way it switches thinking off: chat_template_kwargs (llama-server, Lucebox)
+    or a top-level enable_thinking (colibri). A server may refuse the form it doesn't know or ignore it and think,
+    so each is tried on the role test and the first after which the model did not think is kept."""
+    passed, failures = None, []
+    for flags in ((), ("enable_thinking",)):
+        candidate = replace(spec, flags=flags)
+        try:
+            facts = await test(candidate, spec.repo)
+        except RuntimeError as e:
+            failures += [str(e)] if str(e) not in failures else []
+            continue
+        if not facts.get("thought"):
+            return candidate
+        passed = passed or candidate
+    if passed is None:
+        raise RuntimeError(" / ".join(failures))
+    return passed
 
 
 _active: dict[str, Spec] = {}
@@ -241,7 +264,7 @@ def _test_vision_image() -> bytes:
 
 async def test(spec: Spec, base: str) -> dict:
     """Returns facts about the model (e.g. embedding size); raises with a readable reason if unusable."""
-    from .llm import NO_THINK, image_part
+    from .llm import NO_THINK, body_for, image_part
     if spec.role == "embed":
         r = await _http.post(f"{base}/embeddings", json={"input": ["prova di ricerca"]})
         if r.status_code >= 400:
@@ -252,16 +275,20 @@ async def test(spec: Spec, base: str) -> dict:
         content = [image_part(_test_image("Codice 47815")), {"type": "text", "text": prompt}]
     else:
         content = "Reply with the single word: OK"
-    r = await _http.post(f"{base}/chat/completions", json={
-        "messages": [{"role": "user", "content": content}], "temperature": 0, "max_tokens": 256, **NO_THINK})
+    try:
+        r = await _http.post(f"{base}/chat/completions", json=body_for(spec, {
+            "messages": [{"role": "user", "content": content}], "temperature": 0, "max_tokens": 256, **NO_THINK}))
+    except httpx.TransportError:
+        raise RuntimeError(f"no server answers at {base}") from None
     if r.status_code >= 400:
         raise RuntimeError(_reason(r.text))
-    out = r.json()["choices"][0]["message"]["content"] or ""
+    msg = r.json()["choices"][0]["message"]
+    out = msg.get("content") or ""
     if spec.role in ("assistant", "ocr") and "47815" not in out.replace(" ", ""):
         raise RuntimeError(f"the model could not read a test image (answered: {out[:80]!r})")
     if not out.strip():
         raise RuntimeError("the model returned an empty answer")
-    return {}
+    return {"thought": bool(msg.get("reasoning_content"))}
 
 
 # --- search index rebuild (embedding model change) ---
@@ -326,7 +353,7 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
     if is_server(ref):
         spec = await external(role, ref)
         yield {"type": "progress", "step": "test"}
-        await test(spec, spec.repo)
+        spec = await tested(spec)
         with db() as conn:
             set_setting(conn, f"model.{role}", asdict(spec))
         _active[role] = spec
