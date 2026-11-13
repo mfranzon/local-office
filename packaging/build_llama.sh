@@ -3,7 +3,7 @@
 # available (CPU otherwise).
 # Pinned to the llama.cpp build the models were tested with.
 set -euo pipefail
-TAG="${LLAMA_TAG:-b11960}"
+TAG="${LLAMA_TAG:-b12359}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/build/llama.cpp"
 OUT="$ROOT/build/bin"
