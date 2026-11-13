@@ -40,7 +40,8 @@ def main():
             time.sleep(0.1)
 
     webview.settings["ALLOW_DOWNLOADS"] = True
-    window = webview.create_window("Local Office", base, width=1360, height=880, min_size=(1000, 680))
+    window = webview.create_window("Local Office", base, width=1360, height=880, min_size=(1000, 680),
+                                   text_select=True)   # pywebview turns selection off by default: answers could not be copied
 
     def pick_folder() -> str | None:
         picked = window.create_file_dialog(webview.FileDialog.FOLDER, directory=str(Path.home()))

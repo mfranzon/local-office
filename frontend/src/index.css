@@ -20,6 +20,16 @@ body { background: #f6f7f9; color: #1d2330; }
 .prose-answer code { background: #f0f2f6; padding: 1px 4px; border-radius: 4px; }
 .prose-answer h1, .prose-answer h2, .prose-answer h3 { font-weight: 600; margin: 0.6em 0 0.3em; }
 
+/* a slide of a Desk presentation, and its small copy in the strip: sizes follow the slide's width */
+.desk-stage { container-type: inline-size; padding: 5% 6%; }
+.desk-stage .slide-title { font-size: 4.6cqw; line-height: 1.2; margin-bottom: 2.5cqw; }
+nav .desk-stage .slide-title { font-size: 7cqw; }
+.desk-stage .slide-thumb { font-size: 5cqw; line-height: 1.3; opacity: 0.65; }
+.desk-stage.dark { color: #fff; }
+.desk-stage.dark ::placeholder { color: rgb(255 255 255 / 0.4); }
+.desk-doc.desk-slide { min-height: 100%; font-size: 2.6cqw; line-height: 1.4; }
+.desk-doc.desk-slide > * + * { margin-top: 0.45em; }
+
 /* the page of a Desk document */
 .desk-doc { outline: none; min-height: 60vh; line-height: 1.65; font-size: 15.5px; }
 .desk-doc > * + * { margin-top: 0.7em; }

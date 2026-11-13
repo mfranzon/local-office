@@ -6,6 +6,8 @@ import pytest
 from docx import Document as Docx
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
+from pptx import Presentation
+from pptx.util import Inches
 
 from app import db as dbmod
 from app import desk, llm, main, sheet, tools
@@ -103,6 +105,120 @@ def test_excel_file_round_trip_keeps_formulas(client):
     assert client.post("/api/desk/import", files={"file": ("scan.pdf", b"%PDF")}).status_code == 400
 
 
+def test_powerpoint_file_round_trip(client):
+    prs = Presentation()
+    cover = prs.slides.add_slide(prs.slide_layouts[0])
+    cover.shapes.title.text, cover.placeholders[1].text = "Offer 2027", "Northwind Ltd"
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    slide.shapes.title.text = "What is\vincluded"
+    frame = slide.placeholders[1].text_frame
+    frame.text = "Licence"
+    frame.paragraphs[0].add_run().text = " Pro"
+    frame.paragraphs[0].runs[1].font.bold = True
+    frame.add_paragraph().text = "12 months"
+    frame.paragraphs[1].level = 1
+    box = slide.shapes.add_textbox(Inches(1), Inches(6), Inches(4), Inches(1))
+    box.text_frame.text = "Prices without VAT"
+    table = slide.shapes.add_table(2, 2, Inches(1), Inches(4.5), Inches(4), Inches(1)).table
+    for r, row in enumerate([("Item", "Total"), ("Licence | Pro", "1.200,00")]):
+        for c, v in enumerate(row):
+            table.cell(r, c).text = v
+    slide.notes_slide.notes_text_frame.text = "Mention the discount."
+    buf = io.BytesIO()
+    prs.save(buf)
+    file = client.post("/api/desk/import", files={"file": ("Offer.pptx", buf.getvalue())}).json()
+    assert file["kind"] == "slides" and file["content"] == [
+        {"title": "Offer 2027", "body": "Northwind Ltd", "notes": ""},
+        {"title": "What is included", "notes": "Mention the discount.",
+         "body": "- Licence **Pro**\n  - 12 months\n\n| Item | Total |\n| --- | --- |\n| Licence \\| Pro | 1.200,00 |\n\nPrices without VAT"}]
+
+    deck = file["content"] + [{"title": "Next steps", "body": "1. Sign\n2. *Pay*\n\nThanks", "notes": 5}, {"title": "  ", "junk": 1}]
+    saved = client.put(f"/api/desk/{file['id']}", json={"content": deck}).json()
+    assert saved["content"][2:] == [{"title": "Next steps", "body": "1. Sign\n2. *Pay*\n\nThanks", "notes": "5"}, {"title": "", "body": "", "notes": ""}]
+    back = Presentation(io.BytesIO(client.get(f"/api/desk/{file['id']}/export?format=pptx").content))
+    assert back.slide_width * 9 == back.slide_height * 16
+    assert [s.slide_layout.name for s in back.slides] == ["Title Slide", "Title and Content", "Title and Content", "Title and Content"]
+    table_md = "\n\n| Item | Total |\n| --- | --- |\n| Licence \\| Pro | 1.200,00 |"
+    assert desk.pptx_to_slides(back) == [{**s, "body": (s["body"].replace(table_md, "") + (table_md if table_md in s["body"] else "")).replace("2. *Pay*", "1. *Pay*")}
+                                         for s in saved["content"]]              # text comes before tables; a numbered list counts by itself
+    second, third = back.slides[1], back.slides[2]
+    assert [(r.text, r.font.bold) for r in second.placeholders[1].text_frame.paragraphs[0].runs] == [("Licence ", None), ("Pro", True)]
+    assert second.shapes[-1].table.cell(1, 0).text == "Licence | Pro" and second.shapes[-1].top >= second.placeholders[1].top + second.placeholders[1].height
+    assert third.placeholders[1].text_frame.paragraphs[1].runs[0].font.italic and len(back.slides[3].placeholders) == 1
+    assert client.get(f"/api/desk/{file['id']}/export?format=docx").status_code == 400
+
+
+def _png(color="red", size=(40, 20)) -> bytes:
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, "PNG")
+    return buf.getvalue()
+
+
+def test_slides_keep_a_background_colour_and_an_image(client, monkeypatch, tmp_path):
+    from pptx.dml.color import RGBColor
+    from app import ingest, slides
+    monkeypatch.setattr(slides, "IMAGES", tmp_path / "desk_images")
+    monkeypatch.setattr(ingest, "FILES", tmp_path)
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    slide.shapes.title.text, slide.placeholders[1].text = "Team", "Anna"
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = RGBColor(0x1F, 0x3A, 0x5F)
+    slide.shapes.add_picture(io.BytesIO(_png()), Inches(5), Inches(2), Inches(2))
+    buf = io.BytesIO()
+    prs.save(buf)
+    file = client.post("/api/desk/import", files={"file": ("Team.pptx", buf.getvalue())}).json()
+    image = file["content"][0]["image"]
+    assert file["content"] == [{"title": "Team", "body": "- Anna", "notes": "", "background": "#1f3a5f", "image": image}]
+    assert client.get(f"/api/desk/images/{image}").headers["content-type"] == "image/jpeg"
+    assert client.get("/api/desk/images/nope.jpg").status_code == 404
+    assert client.post("/api/desk/images", files={"file": ("x.png", b"not a picture")}).status_code == 400
+    mine = client.post("/api/desk/images", files={"file": ("x.png", _png("blue"))}).json()["image"]
+    saved = client.put(f"/api/desk/{file['id']}", json={"content": file["content"] + [
+        {"title": "Cover", "background": "FFF", "image": mine}, {"title": "Plain", "background": "blue", "image": "../x.jpg"}]}).json()
+    assert saved["content"][1:] == [{"title": "Cover", "body": "", "notes": "", "background": "#ffffff", "image": mine},
+                                    {"title": "Plain", "body": "", "notes": ""}]
+
+    with dbmod.db() as conn:
+        conn.executemany("INSERT INTO documents(id, name, ext, size) VALUES (?,?,?,0)", [("pic1", "logo.png", ".png"), ("txt1", "notes.txt", ".txt")])
+    (tmp_path / "pic1.png").write_bytes(_png("green"))
+    prompts = _assistant(monkeypatch, [("set_background", {"color": "#0B1F3A"}), ("set_background", {"color": "navy"}),
+                                       ("write_slide", {"slide": 3, "image": "pic1", "background": ""}), ("write_slide", {"slide": 2, "image": "txt1"}),
+                                       ("add_slides", {"after": 3, "slides": [{"title": "End", "image": image, "background": "#fff"}]})], "Done.")
+    _chat(file["id"], "make it dark blue and put the logo on the last slide")
+    deck = desk.get(file["id"])["content"]
+    assert [s.get("background") for s in deck] == ["#0b1f3a", "#0b1f3a", None, "#ffffff"]
+    assert deck[2]["image"] not in (image, mine) and deck[1]["image"] == mine and deck[3]["image"] == image
+    assert f"[1] Title: Team\n- Anna\nBackground: #0b1f3a\nImage: {image}" in prompts[1]
+
+    back = Presentation(io.BytesIO(client.get(f"/api/desk/{file['id']}/export?format=pptx").content))
+    assert desk.pptx_to_slides(back) == deck
+    first, second = back.slides[0], back.slides[1]
+    assert first.shapes.title.text_frame.paragraphs[0].runs[0].font.color.rgb == RGBColor(255, 255, 255)   # white on a dark colour
+    picture, wide = first.shapes[-1], second.shapes[-1]
+    assert picture.left > first.placeholders[1].left + first.placeholders[1].width and picture.width == 2 * picture.height
+    assert wide.width > 1.5 * picture.width and len(second.placeholders) == 1        # no text: the image has all the space
+
+    import os
+    for name in os.listdir(slides.IMAGES):
+        os.utime(slides.IMAGES / name, (0, 0))
+    other = desk.create("Other", "slides", [{"title": "x", "image": mine}])
+    desk.delete(file["id"])
+    assert os.listdir(slides.IMAGES) == [mine]                                       # the images no slide shows are removed
+    desk.delete(other)
+
+
+def test_long_slide_text_is_made_smaller_to_fit():
+    from app import slides
+    buf = io.BytesIO()
+    slides.to_pptx(slides.clean([{"title": "Short", "body": "- one\n- two"}, {"title": "Long", "body": "\n".join(f"- point {i} " + "word " * 12 for i in range(12))}]), buf)
+    short, long = (s.placeholders[1].text_frame.paragraphs[0].runs[0].font.size for s in Presentation(buf).slides)
+    assert short is None and long.pt == 20                               # the template's size, unless the text needs a smaller one
+    with pytest.raises(ValueError, match="at most"):
+        slides.clean([{}] * (slides.MAX_SLIDES + 1))
+
+
 def test_files_are_created_renamed_listed_and_deleted(client, tmp_path):
     a = client.post("/api/desk", json={"name": "Notes", "kind": "doc"}).json()
     b = client.post("/api/desk", json={"name": "Budget", "kind": "sheet"}).json()
@@ -185,6 +301,32 @@ def test_assistant_fills_a_sheet(client, monkeypatch):
     assert "A5: Total | B5: =SUM(B3:B4) (shows 200)" in prompts[1]
     assert desk.get(file)["values"] == [["Item", "Amount"], [], ["Paper", 120], ["Ink", 80], ["Total", 200]]
     assert not (tools.EXPORTS).exists()                                  # only the open file can be changed
+
+
+def test_assistant_writes_a_presentation(client, monkeypatch):
+    file = desk.create("Pitch", "slides", [{"title": "Pitch", "body": "Northwind", "notes": ""}, {"title": "Old", "body": "- a"}])
+    prompts = _assistant(monkeypatch,
+                         [("add_slides", {"after": 1, "slides": [{"title": "Problem", "body": "- Slow\n- Costly"}, {"title": "Solution", "notes": "Demo here"}]}),
+                          ("write_slide", {"slide": 4, "body": "- b", "notes": "Say b"})],
+                         [("move_slide", {"slide": 4, "to": 2}), ("delete_slides", {"slide": 9}), ("write_slide", {"slide": 0, "title": "x"})],
+                         [("delete_slides", {"slide": 4})], "Added two slides.")
+    events = _chat(file, "add the problem and the solution", {"slide": 2})
+    assert [(e["type"], e.get("slide")) for e in events] == [("step", None), ("edit", 2), ("step", None), ("edit", 4), ("step", None), ("edit", 2),
+                                                           ("step", None), ("step", None), ("step", None), ("edit", 3), ("sources", None), ("token", None)]
+    assert "a presentation that is open" in prompts[0] and "[2] Title: Old\n- a" in prompts[0] and "looking at slide 2" in prompts[0]
+    assert "[4] Title: Old\n- b\nNotes: Say b" in prompts[1] and "looking at" not in prompts[1]
+    after = desk.get(file)
+    assert [s["title"] for s in after["content"]] == ["Pitch", "Old", "Problem"] and after["can_undo"]
+    assert [s["title"] for s in client.post(f"/api/desk/{file}/undo").json()["content"]] == ["Pitch", "Old"]
+
+    long = desk.create("Long", "slides", [{"title": f"Slide {i}", "body": "word " * 100} for i in range(1, 21)])
+    prompts = _assistant(monkeypatch, [("read_slides", {"first": 20, "last": 20})], "ok")
+    _chat(long, "what does this slide say?", {"slide": 3})
+    assert len(prompts[0]) < 9000 and "cut: read_slides" in prompts[0] and "[3] Title: Slide 3\n" + "word " * 99 + "word\n" in prompts[0]
+    empty = desk.create("New", "slides")
+    prompts = _assistant(monkeypatch, "Nothing to do.")
+    _chat(empty, "hi", {"slide": 1})
+    assert "has no slides yet: add them with add_slides" in prompts[0] and "looking at" not in prompts[0]
 
 
 def test_unfinished_text_of_an_edit_is_read():

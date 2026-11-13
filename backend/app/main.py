@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from . import agent, desk, ingest, llm, mcp, models, rag, runtime, sheet, skills, sources, tools, wiki, wiki_views
+from . import agent, desk, ingest, llm, mcp, models, rag, runtime, sheet, skills, slides, sources, tools, wiki, wiki_views
 from .config import ROLES, STATIC_DIR, SNAPDRAGON
 from .db import db, init
 
@@ -377,7 +377,7 @@ def download_export(run_id: str, filename: str):
 
 class DeskNew(BaseModel):
     name: str
-    kind: str                         # doc | sheet
+    kind: str                         # doc | sheet | slides
 
 
 class DeskCopy(BaseModel):
@@ -387,7 +387,7 @@ class DeskCopy(BaseModel):
 
 class DeskSave(BaseModel):
     name: str | None = None
-    content: str | list[list] | None = None
+    content: str | list | None = None  # Markdown, rows of cells, or slides
 
 
 class DeskShift(BaseModel):
@@ -398,7 +398,7 @@ class DeskShift(BaseModel):
 
 class DeskChat(BaseModel):
     messages: list[dict]
-    selection: dict | None = None     # document: {start, end, text} in blocks; sheet: {cell}
+    selection: dict | None = None     # document: {start, end, text} in blocks; sheet: {cell}; presentation: {slide}
 
 
 def _desk_or_404(file_id: str) -> dict:
@@ -429,8 +429,8 @@ def desk_import(file: UploadFile = File(...)):
 
 @app.post("/api/desk/copy")
 def desk_copy(body: DeskCopy):
-    """Puts a copy of a library document or of a file a skill created on the Desk. Scans, PDFs and slides, which
-    the Desk can't open as they are, become a document with the text that was read from their pages."""
+    """Puts a copy of a library document or of a file a skill created on the Desk. Scans and PDFs, which the Desk
+    can't open as they are, become a document with the text that was read from their pages."""
     try:
         if body.export:
             path = (tools.EXPORTS / body.export).resolve()
@@ -445,6 +445,22 @@ def desk_copy(body: DeskCopy):
         return desk.get(desk.create(Path(doc["name"]).stem, "doc", "\n\n".join(p.strip() for p in pages if p.strip())))
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+
+@app.post("/api/desk/images")
+def desk_image_new(file: UploadFile = File(...)):
+    """Keeps a picture for a slide; the slide then names it as its image."""
+    try:
+        return {"image": slides.keep_image(file.file.read())}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/desk/images/{name}")
+def desk_image(name: str):
+    if not slides.is_image(name) or not (slides.IMAGES / name).is_file():
+        _404()
+    return FileResponse(slides.IMAGES / name, headers={"Cache-Control": "max-age=31536000, immutable"})
 
 
 @app.get("/api/desk/{file_id}")

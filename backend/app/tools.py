@@ -131,7 +131,7 @@ def list_deadlines(run: Run, days: int = 60) -> str:
 
 
 def _safe_name(filename: str, ext: str) -> str:
-    stem = re.sub(r"\.(docx|xlsx|md)$", "", filename.strip(), flags=re.I)
+    stem = re.sub(r"\.(docx|xlsx|pptx|md)$", "", filename.strip(), flags=re.I)
     stem = re.sub(r'[\\/:*?"<>|]+', "-", stem).strip(" .-") or "export"
     return f"{stem[:80]}.{ext}"
 
@@ -183,23 +183,24 @@ def markdown_to_docx(md: str, path):
 _MARK = re.compile(r"(?<!\\)(\*{1,3}|~~|`)(?=\S)(.+?)(?<=\S)(?<!\\)\1")   # **bold**, *italic*, ***both***, ~~struck~~, `code`
 
 
-def _runs(paragraph, text: str):
-    text = re.sub(r"(?<!\\)\[([^\]]+)\]\([^)\s]+\)", r"\1", text)   # a link keeps its text
-
-    def add(part: str, mark: str = ""):
-        if part:
-            run = paragraph.add_run(part if mark == "`" else re.sub(r"\\([\\`*_\[\]<>#|.)+-])", r"\1", part))
-            run.bold, run.italic = "**" in mark or None, mark in ("*", "***") or None
-            if mark == "~~":
-                run.font.strike = True
-            if mark == "`":
-                run.font.name = "Courier New"
-    pos = 0
+def inline(text: str) -> list[tuple[str, str]]:
+    """A line of Markdown as (text, mark) pieces; the mark is "", *, **, ***, ~~ or `. A link keeps its text."""
+    text = re.sub(r"(?<!\\)\[([^\]]+)\]\([^)\s]+\)", r"\1", text)
+    out, pos = [], 0
     for m in _MARK.finditer(text):
-        add(text[pos:m.start()])
-        add(m[2], m[1])
+        out += [(text[pos:m.start()], ""), (m[2], m[1])]
         pos = m.end()
-    add(text[pos:])
+    return [(part if mark == "`" else re.sub(r"\\([\\`*_\[\]<>#|.)+-])", r"\1", part), mark) for part, mark in out + [(text[pos:], "")] if part]
+
+
+def _runs(paragraph, text: str):
+    for part, mark in inline(text):
+        run = paragraph.add_run(part)
+        run.bold, run.italic = "**" in mark or None, mark in ("*", "***") or None
+        if mark == "~~":
+            run.font.strike = True
+        if mark == "`":
+            run.font.name = "Courier New"
 
 
 def create_file(run: Run, filename: str, format: str, content: str | None = None, rows: list | None = None) -> str:

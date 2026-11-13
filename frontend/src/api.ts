@@ -39,12 +39,14 @@ export interface Connection {
 }
 export interface ExportFile { name: string; url: string }
 
-export interface DeskSummary { id: string; name: string; kind: "doc" | "sheet"; updated_at: string }
+export interface DeskSummary { id: string; name: string; kind: "doc" | "sheet" | "slides"; updated_at: string }
 export type Cell = string | number | boolean | null;
+/** The body is Markdown; the background is a colour as #rrggbb; the image is the name of a picture kept for the slides. */
+export interface Slide { title: string; body: string; notes: string; background?: string; image?: string }
 /** A file on the Desk. A document's content is Markdown; a sheet's is rows of cells as typed, with `values`
- *  holding what each cell shows (formulas computed). */
+ *  holding what each cell shows (formulas computed); a presentation's is its slides. */
 export type DeskFile = DeskSummary & { can_undo: boolean }
-  & ({ kind: "doc"; content: string } | { kind: "sheet"; content: Cell[][]; values: Cell[][] });
+  & ({ kind: "doc"; content: string } | { kind: "sheet"; content: Cell[][]; values: Cell[][] } | { kind: "slides"; content: Slide[] });
 
 export interface Page {
   n: number;
@@ -138,7 +140,7 @@ export type StreamEvent =
   | { type: "services" }
   | ({ type: "step" } & Step)
   | ({ type: "file" } & ExportFile)
-  | { type: "edit" }
+  | { type: "edit"; slide?: number }
   | { type: "draft"; key: string; start: number; end: number; text: string }
   | { type: "done" };
 
@@ -215,8 +217,14 @@ export const api = {
     form.append("file", file);
     return fetch("/api/desk/import", { method: "POST", body: form }).then(json<DeskFile>);
   },
+  deskImage: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return fetch("/api/desk/images", { method: "POST", body: form }).then(json<{ image: string }>);
+  },
+  deskImageUrl: (name: string) => `/api/desk/images/${name}`,
   deskCopy: (from: { doc_id: string } | { export: string }) => post("/api/desk/copy", from) as Promise<DeskFile>,
-  deskSave: (id: string, patch: { name?: string; content?: string | Cell[][] }, keepalive = false) =>
+  deskSave: (id: string, patch: { name?: string; content?: string | Cell[][] | Slide[] }, keepalive = false) =>
     fetch(`/api/desk/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch), keepalive }).then(json<DeskFile>),
   deskShift: (id: string, axis: "row" | "col", index: number, delta: number) =>
     post(`/api/desk/${id}/shift`, { axis, index, delta }) as Promise<DeskFile>,

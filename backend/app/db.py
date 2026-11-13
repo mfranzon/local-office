@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS chats (
 CREATE TABLE IF NOT EXISTS desk_files (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  kind TEXT NOT NULL,                          -- doc (content: Markdown) | sheet (content: JSON rows of cells)
+  kind TEXT NOT NULL,                          -- doc (content: Markdown) | sheet (JSON rows of cells) | slides (JSON list of slides)
   content TEXT NOT NULL,
   previous TEXT,                               -- content before the assistant's last run of changes, for undo
   created_at TEXT NOT NULL DEFAULT (datetime('now')),

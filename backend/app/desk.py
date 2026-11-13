@@ -1,9 +1,11 @@
-"""The Desk: documents and spreadsheets the user edits in the app, together with the assistant.
+"""The Desk: documents, spreadsheets and presentations the user edits in the app, together with the assistant.
 
-A Desk file is the app's own copy: a document is Markdown, a spreadsheet is rows of cells (sheet.py). Word, Excel,
-CSV and text files are imported into that form and exported back, so the originals are never modified.
-The assistant edits the open file with tools (replace or insert blocks of a document, write cells of a sheet);
-the content before its first change in a run is kept, so the user can undo the whole run.
+A Desk file is the app's own copy: a document is Markdown, a spreadsheet is rows of cells (sheet.py), a
+presentation is a list of slides (slides.py). Word, Excel, PowerPoint, CSV and text files are imported into that
+form and exported back, so the originals are never modified.
+The assistant edits the open file with tools (replace or insert blocks of a document, write cells of a sheet,
+write or add slides of a presentation); the content before its first change in a run is kept, so the user can
+undo the whole run.
 """
 import csv
 import io
@@ -19,12 +21,17 @@ from docx import Document as Docx
 from docx.table import Table
 from docx.text.hyperlink import Hyperlink
 from openpyxl import Workbook, load_workbook
+from pptx import Presentation
+from pptx.enum.dml import MSO_COLOR_TYPE, MSO_FILL
+from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+from pptx.shapes.picture import Picture
+from pptx.shapes.placeholder import PlaceholderPicture
 
-from . import agent, mcp, sheet, tools
+from . import agent, ingest, mcp, sheet, slides, tools
 from .db import db
 
-IMPORTS = {".docx": "doc", ".md": "doc", ".txt": "doc", ".xlsx": "sheet", ".csv": "sheet"}
-EXPORTS = {"doc": ("docx", "md"), "sheet": ("xlsx", "csv")}
+IMPORTS = {".docx": "doc", ".md": "doc", ".txt": "doc", ".xlsx": "sheet", ".csv": "sheet", ".pptx": "slides"}
+EXPORTS = {"doc": ("docx", "md"), "sheet": ("xlsx", "csv"), "slides": ("pptx",)}
 DOC_CHARS = 6000      # a longer document is shown to the assistant as an outline; it reads blocks as it needs them
 SHEET_CHARS = 5000
 READ_CHARS = 6000
@@ -34,10 +41,8 @@ READ_CHARS = 6000
 
 def view(row) -> dict:
     out = {k: row[k] for k in ("id", "name", "kind", "updated_at")} | {"can_undo": row["previous"] is not None}
-    if row["kind"] == "sheet":
-        rows = json.loads(row["content"])
-        return out | {"content": rows, "values": sheet.values(rows)}
-    return out | {"content": row["content"]}
+    content = row["content"] if row["kind"] == "doc" else json.loads(row["content"])
+    return out | {"content": content} | ({"values": sheet.values(content)} if row["kind"] == "sheet" else {})
 
 
 def listing() -> list[dict]:
@@ -52,9 +57,10 @@ def get(file_id: str) -> dict | None:
 
 
 def _stored(kind: str, content) -> str:
-    if kind == "sheet":
-        return json.dumps(sheet.clean(content if isinstance(content, list) else []))
-    return content.strip() if isinstance(content, str) else ""
+    if kind == "doc":
+        return content.strip() if isinstance(content, str) else ""
+    content = content if isinstance(content, list) else []
+    return json.dumps(sheet.clean(content) if kind == "sheet" else slides.clean(content))
 
 
 def create(name: str, kind: str, content=None) -> str:
@@ -88,6 +94,8 @@ def undo(file_id: str):
 def delete(file_id: str):
     with db() as conn:
         conn.execute("DELETE FROM desk_files WHERE id=?", (file_id,))
+        decks = conn.execute("SELECT content, previous FROM desk_files WHERE kind='slides'").fetchall()
+    slides.sweep({s.get("image") for row in decks for deck in row if deck for s in json.loads(deck)})
 
 
 # --- documents: Markdown in numbered blocks ---
@@ -187,6 +195,69 @@ def docx_to_markdown(doc) -> str:
     return "\n\n".join(out)
 
 
+# --- presentations: what a PowerPoint file says, slide by slide ---
+
+_NOT_BODY = {PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE, PP_PLACEHOLDER.DATE, PP_PLACEHOLDER.FOOTER, PP_PLACEHOLDER.SLIDE_NUMBER}
+_LISTED = {PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT}      # content boxes: their paragraphs are bullets unless they say otherwise
+
+
+def _slide_text(paragraph) -> str:
+    """A slide paragraph's text with bold and italic, as Markdown."""
+    if "\v" in paragraph.text:                              # a line break sits between the runs: the words alone
+        return escape(" ".join(paragraph.text.split()))
+    pieces = [(escape(r.text), "*" * ((2 if r.font.bold else 0) + (1 if r.font.italic else 0))) for r in paragraph.runs if r.text]
+    return "".join(_marked("".join(t for t, _ in group), mark) for mark, group in groupby(pieces, key=lambda p: p[1])).replace("\t", " ").strip()
+
+
+def _shape_blocks(shape) -> list[str]:
+    """What a slide's shape says, as Markdown blocks: a table, or its paragraphs with lists kept together."""
+    if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+        return [b for s in ingest._reading_order(shape.shapes) for b in _shape_blocks(s)]
+    if getattr(shape, "has_table", False):
+        return [table_markdown([[" ".join(filter(None, map(_slide_text, cell.text_frame.paragraphs))) for cell in row.cells]
+                                for row in shape.table.rows])]
+    if not shape.has_text_frame:
+        return []
+    listed = shape.is_placeholder and shape.placeholder_format.type in _LISTED
+    out, in_list = [], False
+    for p in shape.text_frame.paragraphs:
+        text = _slide_text(p)
+        said = {child.tag.rpartition("}")[2] for child in p._p.pPr} if p._p.pPr is not None else set()
+        marker = None if "buNone" in said or not text else "1. " if "buAutoNum" in said else "- " if listed or "buChar" in said else None
+        if marker and in_list:
+            out[-1] += "\n" + " " * (len(marker) * p.level) + marker + text
+        elif text:
+            out.append((marker or "") + text)
+        in_list = bool(marker)
+    return out
+
+
+def _slide_look(slide) -> dict:
+    """A slide's own plain background colour and its largest picture, kept as an image of the Desk."""
+    out = {}
+    if not slide.follow_master_background:
+        fill = slide.background.fill
+        if fill.type == MSO_FILL.SOLID and fill.fore_color.type == MSO_COLOR_TYPE.RGB:
+            out["background"] = f"#{fill.fore_color.rgb}".lower()
+    for shape in sorted((s for s in slide.shapes if isinstance(s, (Picture, PlaceholderPicture))), key=lambda s: -(s.width or 0) * (s.height or 0)):
+        try:
+            return out | {"image": slides.keep_image(shape.image.blob)}
+        except ValueError:                                  # linked, not in the file, or a drawing a browser can't show
+            continue
+    return out
+
+
+def pptx_to_slides(prs) -> list[dict]:
+    out = []
+    for slide in prs.slides:
+        shapes = [s for s in ingest._reading_order(slide.shapes) if not (s.is_placeholder and s.placeholder_format.type in _NOT_BODY)]
+        notes = slide.notes_slide.notes_text_frame if slide.has_notes_slide else None
+        out.append({"title": slide.shapes.title.text_frame.text if slide.shapes.title is not None else "",
+                    "body": "\n\n".join(b for s in shapes for b in _shape_blocks(s)), "notes": notes.text if notes is not None else ""}
+                   | _slide_look(slide))
+    return out
+
+
 # --- import and export ---
 
 def _xlsx_value(v):
@@ -198,8 +269,10 @@ def _xlsx_value(v):
 
 
 def read_file(filename: str, data: bytes) -> tuple[str, object]:
-    """(kind, content) of a Word, Excel, CSV, Markdown or text file."""
+    """(kind, content) of a Word, Excel, PowerPoint, CSV, Markdown or text file."""
     ext = Path(filename).suffix.lower()
+    if ext == ".pptx":
+        return "slides", pptx_to_slides(Presentation(io.BytesIO(data)))
     if ext == ".docx":
         return "doc", docx_to_markdown(Docx(io.BytesIO(data)))
     if ext == ".xlsx":
@@ -207,7 +280,7 @@ def read_file(filename: str, data: bytes) -> tuple[str, object]:
         return "sheet", [[_xlsx_value(v) for v in row] for row in ws.iter_rows(
             max_row=min(ws.max_row, sheet.MAX_ROWS + 1), max_col=min(ws.max_column, sheet.MAX_COLS + 1), values_only=True)]
     if ext not in IMPORTS:
-        raise ValueError("the Desk opens Word (.docx), Excel (.xlsx), CSV, Markdown and text files")
+        raise ValueError("the Desk opens Word (.docx), Excel (.xlsx), PowerPoint (.pptx), CSV, Markdown and text files")
     text = data.decode("utf-8-sig", errors="replace")
     if ext == ".csv":
         try:
@@ -224,12 +297,14 @@ def import_file(filename: str, data: bytes) -> str:
 
 
 def export(file: dict, fmt: str) -> tuple[str, bytes]:
-    """(filename, bytes) of a Desk file as docx or md (documents), xlsx or csv (sheets)."""
+    """(filename, bytes) of a Desk file as docx or md (documents), xlsx or csv (sheets), pptx (presentations)."""
     if fmt not in EXPORTS[file["kind"]]:
-        raise ValueError(f"a {file['kind']} exports as {' or '.join(EXPORTS[file['kind']])}")
+        raise ValueError(f"a {KINDS[file['kind']][0]} exports as {' or '.join(EXPORTS[file['kind']])}")
     buf = io.BytesIO()
     if fmt == "docx":
         tools.markdown_to_docx(file["content"], buf)
+    elif fmt == "pptx":
+        slides.to_pptx(file["content"], buf)
     elif fmt == "xlsx":
         wb = Workbook()
         for row in file["content"]:
@@ -279,7 +354,28 @@ shown after it.
   so the sheet stays right when the user changes a number.
 - insert_rows and delete_rows move the rows below; formulas follow."""
 
+SLIDES_HOW = """The slides are listed below, numbered: the title, then the body in Markdown, then the speaker notes, the
+background colour and the image if there are any. The [n] numbers are not part of the text: never write them.
+- write_slide rewrites the title, the body or the notes of a slide: give only the parts that change.
+- add_slides adds new slides after a slide (after 0: at the start). Add the slides of a section in one call.
+- delete_slides and move_slide remove and reorder slides. The numbers change after every edit: the list below is
+  always the current one.
+A slide is read at a glance: a short title, and a body of three to five short bullet lines ("- ") or a small
+table. What the speaker says in more words goes in the notes, not on the slide. The first slide is the cover:
+its body is one or two plain lines (a subtitle, who presents, the date), not a list.
+A slide can have a background colour and one image, shown next to its text.
+- set_background colours all the slides, or slides first..last. The colour is hex, like #1F3A5F; the text turns
+  white on a dark colour. Use one colour for the whole presentation, and at most another for the cover.
+- `image` in write_slide and add_slides is the doc_id of a picture in the user's documents (list_documents finds
+  them: their names end in .png, .jpg and the like), or the image of another slide as listed below. "" removes it.
+  You cannot draw images or find them elsewhere: for a picture that is not in the documents, tell the user to add
+  it with the image button above the slide."""
+
 _INT = {"type": "integer"}
+_SLIDE = {"title": {"type": "string"}, "body": {"type": "string", "description": 'Markdown: short "- " bullet lines, or a table'},
+          "notes": {"type": "string", "description": "speaker notes"},
+          "background": {"type": "string", "description": 'background colour as hex, like "#1F3A5F"; "" for none'},
+          "image": {"type": "string", "description": 'doc_id of a picture in the documents, or the image of another slide; "" for none'}}
 DOC_TOOLS = [
     ("replace_blocks", "Replace blocks start..end of the open document with new Markdown. Empty content deletes them.",
      {"start": _INT, "end": _INT, "content": {"type": "string", "description": "Markdown"}}, ["start", "end", "content"]),
@@ -299,6 +395,22 @@ SHEET_TOOLS = [
      {"row": {"type": "integer", "description": "first row to delete, from 1"}, "count": {"type": "integer", "description": "default 1"}}, ["row"]),
 ]
 READ_CELLS = ("read_cells", "The cells of rows first..last of the open sheet.", {"first": _INT, "last": _INT}, ["first", "last"])
+SLIDES_TOOLS = [
+    ("write_slide", "Rewrite the title, the body or the notes of a slide of the open presentation, or change its background colour or its image. Parts left out stay as they are.",
+     {"slide": _INT} | _SLIDE, ["slide"]),
+    ("add_slides", "Add new slides to the open presentation after a slide (after 0: at the start).",
+     {"after": _INT, "slides": {"type": "array", "items": {"type": "object", "properties": _SLIDE, "required": ["title"]}}}, ["after", "slides"]),
+    ("delete_slides", "Delete slides of the open presentation.",
+     {"slide": {"type": "integer", "description": "first slide to delete"}, "count": {"type": "integer", "description": "default 1"}}, ["slide"]),
+    ("move_slide", "Move a slide of the open presentation to another position.",
+     {"slide": _INT, "to": {"type": "integer", "description": "the number the slide will have"}}, ["slide", "to"]),
+    ("set_background", "Set the background colour of all the slides of the open presentation, or of slides first..last.",
+     {"color": {"type": "string", "description": 'hex, like "#1F3A5F"; "" for none'}, "first": _INT, "last": _INT}, ["color"]),
+]
+READ_SLIDES = ("read_slides", "The full text of slides first..last of the open presentation.", {"first": _INT, "last": _INT}, ["first", "last"])
+# per kind: what the assistant is told the file is, how to edit it, the tools that do, and the one that reads what a long file doesn't show
+KINDS = {"doc": ("document", DOC_HOW, DOC_TOOLS, READ_BLOCKS), "sheet": ("spreadsheet", SHEET_HOW, SHEET_TOOLS, READ_CELLS),
+         "slides": ("presentation", SLIDES_HOW, SLIDES_TOOLS, READ_SLIDES)}
 READ_TOOLS = {"search_documents", "list_documents", "read_document", "wiki_page", "list_deadlines"}
 
 
@@ -308,12 +420,14 @@ class Session:
     def __init__(self, file: dict):
         self.id, self.kind = file["id"], file["kind"]
         self.edits = 0
+        self.at = None            # the slide the last change was made on: the window shows it
 
     def content(self):
         return get(self.id)["content"]
 
-    def write(self, content):
+    def write(self, content, at: int | None = None):
         """The content before the first change of the run is kept, so undo() takes the whole run back."""
+        self.at = at
         stored = _stored(self.kind, content)
         with db() as conn:
             if not self.edits:
@@ -395,7 +509,94 @@ def read_cells(s: Session, first: int, last: int) -> str:
     return "\n".join(sheet.as_lines(s.content(), int(first) - 1, int(last) - 1))[:READ_CHARS] or "Those rows are empty."
 
 
-EDITS = {f.__name__: f for f in (replace_blocks, insert_blocks, read_blocks, write_cells, insert_rows, delete_rows, read_cells)}
+def _no_slide(deck: list) -> str:
+    return f"Error: the presentation has slides 1 to {len(deck)}." if deck else "Error: the presentation has no slides yet."
+
+
+def _colour(value: str) -> str:
+    if value.strip() and not slides.colour(value):
+        raise ValueError(f'"{value}" is not a colour: write it as hex, like "#1F3A5F".')
+    return slides.colour(value)
+
+
+def _image(ref: str) -> str:
+    """The image a slide is given: one that is already on a slide, or a picture of the library by its doc_id."""
+    ref = ref.strip()
+    if not ref or (slides.is_image(ref) and (slides.IMAGES / ref).is_file()):
+        return ref
+    with db() as conn:
+        doc = conn.execute("SELECT name, ext FROM documents WHERE id=?", (ref,)).fetchone()
+    if doc is None:
+        raise ValueError(f"no picture with doc_id {ref}. list_documents shows the documents: pictures have names ending in .png, .jpg and the like.")
+    if doc["ext"] not in ingest.IMAGE_EXTS:
+        raise ValueError(f"{doc['name']} is not a picture.")
+    return slides.keep_image(ingest.file_path(ref, doc["ext"]).read_bytes())
+
+
+def _look(slide: dict) -> dict:
+    """The background and the image the assistant gives a slide, checked."""
+    return ({"background": _colour(slide["background"])} if isinstance(slide.get("background"), str) else {}) | (
+        {"image": _image(slide["image"])} if isinstance(slide.get("image"), str) else {})
+
+
+def write_slide(s: Session, slide: int, title: str | None = None, body: str | None = None, notes: str | None = None,
+                background: str | None = None, image: str | None = None) -> str:
+    deck, n = s.content(), int(slide)
+    if not 1 <= n <= len(deck):
+        return _no_slide(deck)
+    deck[n - 1] |= {k: v for k, v in (("title", title), ("body", body), ("notes", notes)) if isinstance(v, str)}
+    deck[n - 1] |= _look({"background": background, "image": image})
+    s.write(deck, n)
+    return f"Done. Slide {n} is now:\n" + slides.as_text(s.content(), n, n)[:READ_CHARS]
+
+
+def add_slides(s: Session, after: int, slides: list) -> str:
+    deck = s.content()
+    new = [x for x in slides if isinstance(x, dict)] if isinstance(slides, list) else []
+    if not new:
+        return "Error: slides is empty."
+    at = max(0, min(int(after), len(deck)))
+    deck[at:at] = [x | _look(x) for x in new]
+    s.write(deck, at + 1)
+    return f"Done. The presentation now has {len(deck)} slides; the new ones are {at + 1} to {at + len(new)}."
+
+
+def delete_slides(s: Session, slide: int, count: int | None = None) -> str:
+    deck, n = s.content(), int(slide)
+    if not 1 <= n <= len(deck):
+        return _no_slide(deck)
+    del deck[n - 1:n - 1 + max(int(count or 1), 1)]
+    s.write(deck, min(n, len(deck)) or None)
+    return f"Done. The presentation now has {len(deck)} slides."
+
+
+def move_slide(s: Session, slide: int, to: int) -> str:
+    deck, n, to = s.content(), int(slide), int(to)
+    if not (1 <= n <= len(deck) and 1 <= to <= len(deck)):
+        return _no_slide(deck)
+    deck.insert(to - 1, deck.pop(n - 1))
+    s.write(deck, to)
+    return f"Done. Slide {n} is now slide {to}."
+
+
+def set_background(s: Session, color: str, first: int | None = None, last: int | None = None) -> str:
+    deck, color = s.content(), _colour(str(color))
+    first, last = int(first or 1), int(last or len(deck))
+    if not 1 <= first <= last <= len(deck):
+        return _no_slide(deck)
+    for slide in deck[first - 1:last]:
+        slide["background"] = color
+    s.write(deck, first)
+    where = "all the slides" if (first, last) == (1, len(deck)) else f"slide {first}" if first == last else f"slides {first} to {last}"
+    return f"Done. The background of {where} is {color or 'the plain one'}."
+
+
+def read_slides(s: Session, first: int, last: int) -> str:
+    return slides.as_text(s.content(), int(first), int(last))[:READ_CHARS] or "No such slides."
+
+
+EDITS = {f.__name__: f for f in (replace_blocks, insert_blocks, read_blocks, write_cells, insert_rows, delete_rows, read_cells,
+                                 write_slide, add_slides, delete_slides, move_slide, set_background, read_slides)}
 
 
 def _shown(s: Session, selection: dict | None) -> tuple[str, str, bool]:
@@ -414,6 +615,12 @@ def _shown(s: Session, selection: dict | None) -> tuple[str, str, bool]:
         return ("\n".join(fit) + more or "(the sheet is empty)",
                 f"\n\nThe user's selected cell is {cell}." if isinstance(cell, str) and re.fullmatch(r"[A-Z]{1,2}\d+", cell) else "",
                 bool(more))
+    if s.kind == "slides":
+        deck = s.content()
+        long = len(slides.as_text(deck)) > DOC_CHARS
+        at = sel["slide"] if isinstance(sel.get("slide"), int) and 1 <= sel["slide"] <= len(deck) else None
+        return (slides.as_text(deck, cut=long, whole=at) or "(the presentation has no slides yet: add them with add_slides, after 0)",
+                f'\n\nThe user is looking at slide {at}; "this slide" in the request means it.' if at else "", long)
     bs = blocks(s.content())
     note, whole = "", range(0)
     if isinstance(sel.get("start"), int) and isinstance(sel.get("end"), int) and 1 <= sel["start"] <= sel["end"] <= len(bs):
@@ -464,20 +671,19 @@ def _unfinished_string(raw: str) -> str:
 
 async def assist(file: dict, history: list[dict], selection: dict | None = None) -> AsyncIterator[dict]:
     """Streams events: draft (the words of a document edit as the model writes them), step (one per tool call),
-    edit (the file changed: show it again), sources, token (the reply)."""
+    edit (the file changed: show it again, at `slide` in a presentation), sources, token (the reply)."""
     s = Session(file)
     run = tools.Run()
     request = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")[:300]
-    doc = s.kind == "doc"
-    own = (DOC_TOOLS if doc else SHEET_TOOLS) + ([READ_BLOCKS if doc else READ_CELLS] if _shown(s, None)[2] else [])
+    what, how, edit_tools, read_tool = KINDS[s.kind]
+    own = edit_tools + ([read_tool] if _shown(s, None)[2] else [])
     specs = tools.schemas(specs=own) + tools.schemas(READ_TOOLS) + mcp.schemas()
     allowed = {spec["function"]["name"]: set(spec["function"]["parameters"].get("properties", {})) for spec in specs}
 
     def system() -> str:
-        content, note, _ = _shown(s, selection if not s.edits else None)   # block numbers of the selection are stale after an edit
-        return SYSTEM.format(name=file["name"], what="document" if doc else "spreadsheet", today=date.today().isoformat(),
-                             request=request, services=agent.SERVICES_NOTE if mcp.schemas() else "",
-                             how=DOC_HOW if doc else SHEET_HOW, content=content, selection=note)
+        content, note, _ = _shown(s, selection if not s.edits else None)   # block and slide numbers of the selection are stale after an edit
+        return SYSTEM.format(name=file["name"], what=what, today=date.today().isoformat(), request=request,
+                             services=agent.SERVICES_NOTE if mcp.schemas() else "", how=how, content=content, selection=note)
 
     async def call(name: str, args: dict) -> str:
         if name not in allowed:
@@ -490,10 +696,10 @@ async def assist(file: dict, history: list[dict], selection: dict | None = None)
             return f"Error: {e}"
 
     seen = 0
-    async for e in agent.loop(system, history, specs, call, Draft().events if doc else None):
+    async for e in agent.loop(system, history, specs, call, Draft().events if s.kind == "doc" else None):
         if s.edits > seen or (e["type"] == "result" and e["tool"] in ("replace_blocks", "insert_blocks")):
             seen = s.edits              # also after a document edit that failed: its words were shown while it was written
-            yield {"type": "edit"}
+            yield {"type": "edit"} | ({"slide": s.at} if s.at else {})
         if e["type"] == "token":
             yield {"type": "sources", "sources": run.sources}
         if e["type"] != "result":

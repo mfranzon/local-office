@@ -1,18 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowLeft, BookOpen, Download, FilePlus2, FileSpreadsheet, FileText, FolderOpen, Loader2, PanelRight, Plug, Sparkles, Trash2, Undo2 } from "lucide-react";
-import { api, stream, type Cell, type DeskFile, type DeskSummary, type Doc, type Msg, type Source, type Step } from "../api";
+import { AlertCircle, ArrowLeft, BookOpen, Download, FileSpreadsheet, FileText, FolderOpen, Loader2, PanelRight, Plug, Presentation, Sparkles, Trash2, Undo2 } from "lucide-react";
+import { api, stream, type Cell, type DeskFile, type DeskSummary, type Doc, type Msg, type Slide, type Source, type Step } from "../api";
 import { useI18n } from "../i18n";
 import Composer from "../components/Composer";
 import DocEditor, { type DocHandle, type Typing } from "../components/DocEditor";
 import { blocks } from "../desk/markdown";
 import Markdown from "../components/Markdown";
 import SheetEditor, { type SheetHandle } from "../components/SheetEditor";
+import SlidesEditor, { type SlidesHandle } from "../components/SlidesEditor";
 import Steps from "../components/Steps";
 import { when } from "./Ask";
 
 interface Turn extends Msg { sources?: Source[]; error?: string; steps?: Step[] }
-const FORMATS = { doc: [["docx", "Word"], ["md", "Markdown"]], sheet: [["xlsx", "Excel"], ["csv", "CSV"]] } as const;
-const OPENS = ".docx,.xlsx,.csv,.md,.txt";
+type Kind = DeskSummary["kind"];
+const KINDS = {
+  doc: { Icon: FileText, color: "text-accent", formats: [["docx", "Word"], ["md", "Markdown"]] },
+  sheet: { Icon: FileSpreadsheet, color: "text-emerald-600", formats: [["xlsx", "Excel"], ["csv", "CSV"]] },
+  slides: { Icon: Presentation, color: "text-orange-600", formats: [["pptx", "PowerPoint"]] },
+} as const;
+const OPENS = ".docx,.xlsx,.pptx,.csv,.md,.txt";
+
+function KindIcon({ kind, size = 20 }: { kind: Kind; size?: number }) {
+  const { Icon, color } = KINDS[kind];
+  return <Icon size={size} className={`${color} shrink-0`} />;
+}
 
 /** Until the server answers with the computed values, an edited cell shows what was typed. */
 function provisional(rows: Cell[][], before: Cell[][], values: Cell[][]): Cell[][] {
@@ -21,7 +32,7 @@ function provisional(rows: Cell[][], before: Cell[][], values: Cell[][]): Cell[]
 }
 
 function Assistant({ turns, kind, working, busy, docs, onSend, onStop, onSource }: {
-  turns: Turn[]; kind: DeskSummary["kind"]; working: boolean; busy: boolean; docs: Doc[];
+  turns: Turn[]; kind: Kind; working: boolean; busy: boolean; docs: Doc[];
   onSend: (text: string) => void; onStop: () => void; onSource: (s: Source) => void;
 }) {
   const { t, d } = useI18n();
@@ -35,7 +46,7 @@ function Assistant({ turns, kind, working, busy, docs, onSend, onStop, onSource 
           <div>
             <p className="text-slate-500 text-sm">{t("desk_assistant_hint")}</p>
             <div className="mt-4 space-y-2">
-              {(kind === "doc" ? d.desk_sugg_doc : d.desk_sugg_sheet).map((s) => (
+              {d[`desk_sugg_${kind}`].map((s) => (
                 <button key={s} disabled={busy} onClick={() => onSend(s)}
                   className="w-full text-left px-3 py-2 rounded-xl border border-slate-200 text-slate-700 hover:border-accent hover:text-accent transition disabled:opacity-40">{s}</button>
               ))}
@@ -78,7 +89,7 @@ function Assistant({ turns, kind, working, busy, docs, onSend, onStop, onSource 
   );
 }
 
-/** The Desk: files written in the app. A file opens in a page or a grid, with the assistant next to it;
+/** The Desk: files written in the app. A file opens in a page, a grid or a deck of slides, with the assistant next to it;
  *  what the user types is saved as they go, and what the assistant changes appears in the file. */
 export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id: string } | null; onSource: (s: Source) => void }) {
   const { t, lang } = useI18n();
@@ -94,7 +105,7 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
   const [typing, setTyping] = useState<Typing | null>(null);         // the page while the assistant writes an edit
   const draft = useRef<{ key: string; base: string[]; start: number; end: number; text: string; md: string } | null>(null);
   const docText = useRef("");                                        // the open document as it is now, typing included
-  const pending = useRef<{ id: string; content: string | Cell[][] } | null>(null);
+  const pending = useRef<{ id: string; content: string | Cell[][] | Slide[] } | null>(null);
   const timer = useRef<number>();
   const saves = useRef(0);
   const shownId = useRef<string | null>(null);
@@ -102,6 +113,7 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
   const picker = useRef<HTMLInputElement>(null);
   const page = useRef<DocHandle>(null);
   const grid = useRef<SheetHandle>(null);
+  const deck = useRef<SlidesHandle>(null);
 
   const refresh = useCallback(() => api.desk().then(setFiles).catch(() => {}), []);
   useEffect(() => { refresh(); }, [refresh]);
@@ -130,7 +142,7 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
       if (saved.kind === "sheet") setFile((f) => f?.id === saved.id ? saved : f);   // formulas computed, cells as stored
     } catch { setSaving("error"); }
   }, []);
-  const changed = (id: string, content: string | Cell[][], now = false) => {
+  const changed = (id: string, content: string | Cell[][] | Slide[], now = false) => {
     if (typeof content === "string") docText.current = content;
     pending.current = { id, content };
     setSaving("saving");
@@ -151,8 +163,7 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
   }, [flush, show, refresh]);
   useEffect(() => { if (open) openFile(open.id); }, [open, openFile]);
 
-  const create = (kind: DeskSummary["kind"]) =>
-    api.deskNew(t(kind === "doc" ? "desk_untitled_doc" : "desk_untitled_sheet"), kind).then(show).then(refresh).catch(fail);
+  const create = (kind: Kind) => api.deskNew(t(`desk_untitled_${kind}`), kind).then(show).then(refresh).catch(fail);
   const importFile = (f: File | undefined) => { if (f) { setError(null); api.deskImport(f).then(show).then(refresh).catch(fail); } };
   const remove = (f: DeskSummary) => {
     if (confirm(t("confirm_delete", { name: f.name }))) api.deskDelete(f.id).then(refresh).catch(fail);
@@ -177,7 +188,7 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
     if (!file || busy) return;
     const id = file.id;
     await flush();                                                   // the assistant reads the file as it is on screen
-    const selection = file.kind === "doc" ? page.current?.selection() : grid.current?.selection();
+    const selection = (file.kind === "doc" ? page : file.kind === "sheet" ? grid : deck).current?.selection();
     const before = chats[id] ?? [];
     const messages: Msg[] = [...before.map(({ role, content }) => ({ role, content })), { role: "user", content: text }];
     let mine: Turn[] = [...before, { role: "user", content: text }, { role: "assistant", content: "" }];
@@ -191,7 +202,10 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
     try {
       const body = JSON.stringify({ messages, selection });
       for await (const e of stream(`/api/desk/${id}/chat`, body, abort.current.signal, { "content-type": "application/json" })) {
-        if (e.type === "edit") { const f = await api.deskFile(id); if (shownId.current === id) show(f); }
+        if (e.type === "edit") {
+          const f = await api.deskFile(id);
+          if (shownId.current === id) { show(f); if (e.slide) deck.current?.go(e.slide); }
+        }
         if (e.type === "draft" && shownId.current === id) {
           let d = draft.current;
           if (d?.key !== e.key) {       // a new edit starts; one written just before it in the same reply stays on the page
@@ -228,8 +242,9 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
           <h1 className="text-2xl font-semibold tracking-tight">{t("desk_title")}</h1>
           <p className="text-slate-500 mt-1">{t("desk_subtitle")}</p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <button onClick={() => create("doc")} className={action}><FilePlus2 size={18} className="text-accent" /> {t("desk_new_doc")}</button>
-            <button onClick={() => create("sheet")} className={action}><FileSpreadsheet size={18} className="text-emerald-600" /> {t("desk_new_sheet")}</button>
+            {(["doc", "sheet", "slides"] as const).map((kind) => (
+              <button key={kind} onClick={() => create(kind)} className={action}><KindIcon kind={kind} size={18} /> {t(`desk_new_${kind}`)}</button>
+            ))}
             <button onClick={() => picker.current?.click()} className={action}><FolderOpen size={18} className="text-slate-500" /> {t("desk_open_file")}</button>
             <input ref={picker} type="file" accept={OPENS} hidden onChange={(e) => { importFile(e.target.files?.[0]); e.target.value = ""; }} />
           </div>
@@ -241,10 +256,10 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
             {files.map((f) => (
               <li key={f.id} className="group flex items-center bg-white rounded-xl border border-slate-200 hover:border-accent transition">
                 <button onClick={() => openFile(f.id)} className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3 text-left">
-                  {f.kind === "doc" ? <FileText size={20} className="text-accent shrink-0" /> : <FileSpreadsheet size={20} className="text-emerald-600 shrink-0" />}
+                  <KindIcon kind={f.kind} />
                   <span className="min-w-0">
                     <span className="block font-medium truncate">{f.name}</span>
-                    <span className="block text-xs text-slate-400">{t(f.kind === "doc" ? "desk_kind_doc" : "desk_kind_sheet")} · {when(f.updated_at, lang)}</span>
+                    <span className="block text-xs text-slate-400">{t(`desk_kind_${f.kind}`)} · {when(f.updated_at, lang)}</span>
                   </span>
                   {busy === f.id && <Loader2 size={15} className="ml-auto animate-spin text-accent" />}
                 </button>
@@ -266,14 +281,14 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
       <div className="flex-1 min-w-0 flex flex-col">
         <header className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 bg-white">
           <button onClick={() => openFile(null)} title={t("desk_back")} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100"><ArrowLeft size={18} /></button>
-          {file.kind === "doc" ? <FileText size={20} className="text-accent shrink-0" /> : <FileSpreadsheet size={20} className="text-emerald-600 shrink-0" />}
+          <KindIcon kind={file.kind} />
           <input key={file.id + file.name} defaultValue={file.name} onBlur={(e) => rename(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
             className="min-w-0 flex-1 max-w-md px-2 py-1 rounded-md font-semibold text-[17px] bg-transparent outline-none hover:bg-slate-100 focus:bg-slate-100" />
           <span className={`text-xs whitespace-nowrap ${saving === "error" ? "text-red-600" : "text-slate-400"}`}>
             {t(saving === "saved" ? "desk_saved" : saving === "saving" ? "desk_saving" : "desk_save_error")}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
-            {FORMATS[file.kind].map(([format, label]) => (
+            {KINDS[file.kind].formats.map(([format, label]) => (
               <button key={format} onClick={() => download(format)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 text-sm hover:bg-slate-50">
                 <Download size={14} /> {label}
@@ -293,9 +308,12 @@ export default function Desk({ docs, open, onSource }: { docs: Doc[]; open: { id
         {file.kind === "doc" ? (
           <DocEditor key={file.id} ref={page} content={file.content} rev={rev} locked={working} typing={typing}
             onChange={(md) => { if (file.can_undo) setFile({ ...file, can_undo: false }); changed(file.id, md); }} />
-        ) : (
+        ) : file.kind === "sheet" ? (
           <SheetEditor key={file.id} ref={grid} rows={file.content} values={file.values} locked={working} onShift={shift}
             onChange={(rows) => { setFile({ ...file, can_undo: false, content: rows, values: provisional(rows, file.content, file.values) }); changed(file.id, rows, true); }} />
+        ) : (
+          <SlidesEditor key={file.id} ref={deck} slides={file.content} rev={rev} locked={working}
+            onChange={(slides) => { setFile({ ...file, can_undo: false, content: slides }); changed(file.id, slides); }} />
         )}
       </div>
       {panel && (
