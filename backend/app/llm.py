@@ -27,7 +27,9 @@ async def complete(role: str, messages: list[dict], **params) -> dict:
     if SNAPDRAGON:
         from . import npu
         return await npu.complete(active(role), messages, **params)
-    r = await _http.post(f"{await url(role)}/chat/completions", json={"messages": messages, "temperature": 0, **params})
+    spec = active(role)
+    r = await _http.post(f"{await url(role)}/chat/completions", headers=spec.headers,
+                         json={"messages": messages, "temperature": 0, **spec.body, **params})
     r.raise_for_status()
     return r.json()["choices"][0]["message"]
 
@@ -39,8 +41,9 @@ async def complete_stream(role: str, messages: list[dict], **params) -> AsyncIte
         yield await complete(role, messages, **params)
         return
     msg = {"content": "", "tool_calls": []}
-    body = {"messages": messages, "temperature": 0, "stream": True, **params}
-    async with _http.stream("POST", f"{await url(role)}/chat/completions", json=body) as r:
+    spec = active(role)
+    body = {"messages": messages, "temperature": 0, "stream": True, **spec.body, **params}
+    async with _http.stream("POST", f"{await url(role)}/chat/completions", json=body, headers=spec.headers) as r:
         if r.is_error:
             await r.aread()
             r.raise_for_status()
@@ -70,8 +73,9 @@ async def chat_stream(messages: list[dict], **params) -> AsyncIterator[str]:
             if event["type"] == "token":
                 yield event["text"]
         return
-    body = {"messages": messages, "stream": True, "temperature": 0.3, **NO_THINK, **params}
-    async with _http.stream("POST", f"{await url('assistant')}/chat/completions", json=body) as r:
+    spec = active("assistant")
+    body = {"messages": messages, "stream": True, "temperature": 0.3, **NO_THINK, **spec.body, **params}
+    async with _http.stream("POST", f"{await url('assistant')}/chat/completions", json=body, headers=spec.headers) as r:
         r.raise_for_status()
         async for line in r.aiter_lines():
             if not line.startswith("data: ") or line == "data: [DONE]":
@@ -87,7 +91,8 @@ async def embed(texts: list[str], query: bool = False) -> list[list[float]]:
         from . import npu
         return await npu.embed(spec, texts, query)
     prefix = spec.query_prefix if query else spec.doc_prefix
-    r = await _http.post(f"{await url('embed')}/embeddings", json={"input": [prefix + t for t in texts]})
+    r = await _http.post(f"{await url('embed')}/embeddings", json={"input": [prefix + t for t in texts], **spec.body},
+                         headers=spec.headers)
     r.raise_for_status()
     return [d["embedding"] for d in sorted(r.json()["data"], key=lambda d: d["index"])]
 

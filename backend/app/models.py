@@ -10,7 +10,7 @@ import re
 import shutil
 from pathlib import Path
 from collections.abc import AsyncIterator
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 import httpx
 from PIL import Image, ImageDraw, ImageFont
@@ -38,10 +38,25 @@ class Spec:
     prompt: str = ""            # ocr only
     min_ram_gb: int = 8         # Mac RAM needed with the other recommended models loaded
     provider: str = "llama"
+    model: str = ""             # server only: which of the server's models answers (LocalAI, llama-server router)
+    key: str = ""               # server only: API key
+    # server only: also send reasoning_effort "none". LocalAI ignores chat_template_kwargs, so Qwen3.5 thinks anyway,
+    # and it files JSON-schema output under "reasoning" with empty content. Servers that reject the field go without.
+    effort_none: bool = False
 
     @property
     def ref(self) -> str:
+        if self.provider == "server":
+            return self.repo + (f"#{self.model}" if self.model else "")
         return f"{self.repo}/{self.file}".rstrip("/")
+
+    @property
+    def body(self) -> dict:
+        return {**({"model": self.model} if self.model else {}), **({"reasoning_effort": "none"} if self.effort_none else {})}
+
+    @property
+    def headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
 
     @property
     def files(self) -> list[str]:
@@ -175,22 +190,35 @@ def is_server(ref: str) -> bool:
 
 async def external(role: str, text: str) -> Spec:
     """'http://127.0.0.1:8080' -> Spec for an OpenAI-compatible server already running on this computer (Lucebox,
-    vLLM, another llama-server). Local Office neither starts nor stops it."""
+    LocalAI, vLLM, another llama-server). Local Office neither starts nor stops it. A server with several models
+    needs one picked as 'http://127.0.0.1:8080#model'; an API key goes before the host: 'http://KEY@127.0.0.1:8080'."""
     if role != "assistant":
         raise RuntimeError("only the assistant can use an external server")
-    base = text.strip().rstrip("/")
+    u = httpx.URL(text.strip())
+    model, key = u.fragment, u.password or u.username
+    base = str(u.copy_with(fragment=None, username=None, password=None)).rstrip("/")
     base = base if base.endswith("/v1") else base + "/v1"
-    if httpx.URL(base).host not in ("127.0.0.1", "localhost", "::1"):
+    if u.host not in ("127.0.0.1", "localhost", "::1"):
         raise RuntimeError("the server must run on this computer (127.0.0.1 or localhost), so documents never leave it")
+    spec = Spec(role, base, "", provider="server", model=model, key=key)
     try:
-        r = await _http.get(f"{base}/models")
+        r = await _http.get(f"{base}/models", headers=spec.headers)
     except httpx.TransportError:
         raise RuntimeError(f"no server answers at {base}: start it, then try again") from None
+    if r.status_code in (401, 403):
+        raise RuntimeError(f"the server wants an API key: write the address as {u.scheme}://KEY@{u.netloc.decode()}")
     try:
-        name = Path(str(r.json()["data"][0]["id"])).name   # servers that load one file report its path
+        ids = [str(m["id"]) for m in r.json()["data"]]
     except (ValueError, LookupError, TypeError):
-        name = ""
-    return Spec(role, base, "", name=name or base, provider="server")
+        ids = []
+    if model and ids and model not in ids:
+        raise RuntimeError(f"the server has no model {model!r}; it has: {', '.join(ids[:12])}")
+    if not model and len(ids) > 1:
+        raise RuntimeError(f"the server has several models: add the one to use, e.g. {base.removesuffix('/v1')}#{ids[0]} "
+                           f"(it has: {', '.join(ids[:12])})")
+    model = model or (ids[0] if ids else "")
+    name = Path(model).name   # servers that load one file report its path
+    return Spec(role, base, "", name=name or base, provider="server", model=model, key=key, effort_none=True)
 
 
 _active: dict[str, Spec] = {}
@@ -243,7 +271,7 @@ async def test(spec: Spec, base: str) -> dict:
     """Returns facts about the model (e.g. embedding size); raises with a readable reason if unusable."""
     from .llm import NO_THINK, image_part
     if spec.role == "embed":
-        r = await _http.post(f"{base}/embeddings", json={"input": ["prova di ricerca"]})
+        r = await _http.post(f"{base}/embeddings", json={"input": ["prova di ricerca"], **spec.body}, headers=spec.headers)
         if r.status_code >= 400:
             raise RuntimeError(_reason(r.text))
         return {"dim": len(r.json()["data"][0]["embedding"])}
@@ -253,7 +281,8 @@ async def test(spec: Spec, base: str) -> dict:
     else:
         content = "Reply with the single word: OK"
     r = await _http.post(f"{base}/chat/completions", json={
-        "messages": [{"role": "user", "content": content}], "temperature": 0, "max_tokens": 256, **NO_THINK})
+        "messages": [{"role": "user", "content": content}], "temperature": 0, "max_tokens": 256, **NO_THINK, **spec.body},
+        headers=spec.headers)
     if r.status_code >= 400:
         raise RuntimeError(_reason(r.text))
     out = r.json()["choices"][0]["message"]["content"] or ""
@@ -326,12 +355,18 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
     if is_server(ref):
         spec = await external(role, ref)
         yield {"type": "progress", "step": "test"}
-        await test(spec, spec.repo)
+        try:
+            await test(spec, spec.repo)
+        except RuntimeError as e:
+            if "reasoning_effort" not in str(e):
+                raise
+            spec = replace(spec, effort_none=False)
+            await test(spec, spec.repo)
         with db() as conn:
             set_setting(conn, f"model.{role}", asdict(spec))
         _active[role] = spec
         runtime.release(role)
-        yield {"type": "switched", "role": role, "model": asdict(spec)}
+        yield {"type": "switched", "role": role, "model": _view(spec)}
         return
     spec = spec or await resolve_custom(role, ref)
     async for pct in runtime.download(spec.repo, spec.files):
@@ -356,7 +391,7 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
 
 
 def _view(s: Spec) -> dict:
-    return {**asdict(s), "ref": s.ref, "downloaded": s.downloaded}
+    return {**{k: v for k, v in asdict(s).items() if k != "key"}, "ref": s.ref, "downloaded": s.downloaded}
 
 
 def overview() -> dict:
