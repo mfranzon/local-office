@@ -158,7 +158,9 @@ def test_llama_http_completion_streaming_images_and_embeddings(monkeypatch):
                 {"index": 0, "embedding": [1., 0.]},
             ]})
         if body.get("stream"):
-            return httpx.Response(200, text='data: {"choices":[{"delta":{"content":"Hello"}}]}\n\ndata: [DONE]\n\n',
+            return httpx.Response(200, text='data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'
+                                       # final usage chunk without choices (issue #14)
+                                       'data: {"choices":[],"usage":{"total_tokens":3}}\n\ndata: [DONE]\n\n',
                                   headers={"content-type": "text/event-stream"})
         return httpx.Response(200, json={"choices": [{"message": {
             "role": "assistant", "content": "Result", "tool_calls": [{"id": "call1"}]

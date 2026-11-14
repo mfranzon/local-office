@@ -80,7 +80,7 @@ async def chat_stream(messages: list[dict], **params) -> AsyncIterator[str]:
         async for line in r.aiter_lines():
             if not line.startswith("data: ") or line == "data: [DONE]":
                 continue
-            delta = json.loads(line[6:])["choices"][0]["delta"].get("content")
+            delta = ((json.loads(line[6:]).get("choices") or [{}])[0].get("delta") or {}).get("content")
             if delta:
                 yield delta
 
