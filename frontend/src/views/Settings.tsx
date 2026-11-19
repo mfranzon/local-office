@@ -9,7 +9,7 @@ const ROLE_ICONS = { assistant: Cpu, ocr: ScanText, embed: Search, vision: ScanT
 const STEPS = ["pull", "configure", "test", "reindex"] as const;
 type Step = (typeof STEPS)[number];
 
-interface Run { role: Role; step: Step; percent?: number; done?: string; error?: string }
+interface Run { role: Role; step: Step; percent?: number; cap?: string; done?: string; error?: string }
 
 const norm = (ref: string) => ref.trim().toLowerCase().replace("huggingface.co/", "hf.co/");
 const fmtSize = (mb: number) => (mb >= 1000 ? `${(mb / 1000).toFixed(1)} GB` : `${mb} MB`);
@@ -96,6 +96,7 @@ function RoleCard({ role, data, ramGb, diskGb, run, busy, onSwitch }: {
                   <li key={s} className={`flex items-center gap-2 text-sm ${idx > cur ? "text-slate-400" : ""}`}>
                     {idx < cur ? <CheckCircle2 size={15} className="text-emerald-600" /> : idx === cur ? <Loader2 size={15} className="animate-spin text-accent" /> : <span className="w-[15px]" />}
                     {t(`step_${s}` as never)}
+                    {idx === cur && s === "test" && run.cap && <span className="text-slate-500">· {t(`cap_${run.cap}` as never)}</span>}
                     {idx === cur && run.percent !== undefined && (s === "pull" || s === "reindex") && (
                       <>
                         <div className="w-40 h-1.5 rounded-full bg-slate-200 overflow-hidden ml-2">
@@ -145,7 +146,8 @@ export default function Settings() {
     try {
       const body = JSON.stringify({ role, ref });
       for await (const e of stream("/api/settings/models", body, new AbortController().signal, { "content-type": "application/json" })) {
-        if (e.type === "progress") set({ step: e.step, percent: e.percent });
+        // an external server is probed one capability at a time: shown as the test step, with what is being tried
+        if (e.type === "progress") set({ step: e.step === "probe" ? "test" : e.step, percent: e.percent, cap: e.cap });
         if (e.type === "switched") set({ done: e.model.name || e.model.ref });
         if (e.type === "error") set({ error: e.message });
       }

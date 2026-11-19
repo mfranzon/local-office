@@ -131,7 +131,7 @@ export type ModelSettings = Record<Role, { active: ModelSpec; recommended: strin
   & { busy: boolean; ram_gb: number; chip: string; disk_free_gb: number };
 
 export type StreamEvent =
-  | { type: "progress"; step: "pull" | "configure" | "test" | "reindex"; percent?: number; model?: string }
+  | { type: "progress"; step: "pull" | "configure" | "test" | "probe" | "reindex"; percent?: number; model?: string; cap?: string }
   | { type: "switched"; role: Role; model: ModelSpec }
   | { type: "sources"; sources: Source[] }
   | { type: "token"; text: string }

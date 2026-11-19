@@ -12,6 +12,11 @@ from dataclasses import dataclass
 #   enable_thinking       a top-level enable_thinking: false instead of the template kwargs
 THINK_OFF = ("chat_template_kwargs", "reasoning_effort", "enable_thinking")
 
+# What a server is probed for when it's added (models.probe), in probe order. A server without chat or stream is
+# refused; without the others it's still used, and the features that need them make do (#18).
+CAPS = ("chat", "stream", "think_off", "vision", "json_schema", "tools")
+REQUIRED = ("chat", "stream")
+
 
 @dataclass(frozen=True)
 class Engine:
