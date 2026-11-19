@@ -9,13 +9,23 @@ from app import db as dbmod
 from app import engines, models
 
 
+def answer(body: dict, content: str = "47815", **message) -> httpx.Response:
+    """A chat reply, streamed if the request asks for it (ending with a usage-only chunk, as some servers do)."""
+    if body.get("stream"):
+        chunks = [{"choices": [{"delta": {"content": content}}]}, {"choices": [], "usage": {}}]
+        return httpx.Response(200, text="".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n")
+    return httpx.Response(200, json={"choices": [{"message": {"content": content, **message}}]})
+
+
 def serve(monkeypatch, reply="47815"):
     def respond(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/models":
             return httpx.Response(200, json={"data": [{"id": "/models/Qwen3.8-27B-UD-IQ4_XS.gguf"}]})
-        assert request.url.path == "/v1/chat/completions"
-        assert json.loads(request.content)["chat_template_kwargs"] == {"enable_thinking": False}
-        return httpx.Response(200, json={"choices": [{"message": {"content": reply}}]})
+        if request.url.path != "/v1/chat/completions":
+            return httpx.Response(404)
+        body = json.loads(request.content)
+        assert body["chat_template_kwargs"] == {"enable_thinking": False}
+        return answer(body, reply)
     monkeypatch.setattr(models, "_http", httpx.AsyncClient(transport=httpx.MockTransport(respond)))
 
 
@@ -57,11 +67,11 @@ def test_other_machines_and_other_roles_are_refused(app_db, monkeypatch, role, r
         asyncio.run(run_switch(role, ref))
 
 
-def test_a_server_that_fails_the_role_test_is_not_adopted(app_db, monkeypatch):
-    serve(monkeypatch, reply="I can't see images")
+def test_a_server_that_cannot_chat_is_not_adopted(app_db, monkeypatch):
+    serve(monkeypatch, reply="")
     models.load()
     before = models.active("assistant")
-    with pytest.raises(RuntimeError, match="could not read a test image"):
+    with pytest.raises(RuntimeError, match="empty answer"):
         asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
     assert models.active("assistant") == before
 
@@ -79,12 +89,14 @@ def serve_many(monkeypatch, key=None, seen=None):
             return httpx.Response(401, json={"error": {"message": "unauthorized"}})
         if request.url.path == "/v1/models":
             return httpx.Response(200, json={"data": [{"id": "whisper-1"}, {"id": "qwen3-vl-4b"}, {"id": "bge-m3"}]})
+        if request.url.path != "/v1/chat/completions":
+            return httpx.Response(404)
         body = json.loads(request.content)
         if seen is not None:
             seen.append(body.get("model"))
         if body.get("model") != "qwen3-vl-4b":
             return httpx.Response(500, json={"error": {"message": "model is not a chat model"}})
-        return httpx.Response(200, json={"choices": [{"message": {"content": "47815"}}]})
+        return answer(body)
     monkeypatch.setattr(models, "_http", httpx.AsyncClient(transport=httpx.MockTransport(respond)))
 
 
@@ -110,7 +122,7 @@ def test_the_picked_model_and_api_key_go_with_every_request(app_db, monkeypatch)
     from app import llm
     monkeypatch.setattr(llm, "_http", models._http)
     assert asyncio.run(llm.chat("assistant", [{"role": "user", "content": "hi"}])) == "47815"
-    assert seen == ["qwen3-vl-4b", "qwen3-vl-4b"]
+    assert len(seen) > 2 and set(seen) == {"qwen3-vl-4b"}
 
 
 def test_thinking_is_turned_off_with_reasoning_effort_unless_the_server_rejects_it(app_db, monkeypatch):
@@ -120,11 +132,13 @@ def test_thinking_is_turned_off_with_reasoning_effort_unless_the_server_rejects_
         def respond(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/v1/models":
                 return httpx.Response(200, json={"data": [{"id": "qwen3.5-9b"}]})
+            if request.url.path != "/v1/chat/completions":
+                return httpx.Response(404)
             body = json.loads(request.content)
             bodies.append(body)
             if strict and "reasoning_effort" in body:
                 return httpx.Response(400, json={"error": {"message": "reasoning_effort: Input should be 'low', 'medium' or 'high'"}})
-            return httpx.Response(200, json={"choices": [{"message": {"content": "47815"}}]})
+            return answer(body)
         monkeypatch.setattr(models, "_http", httpx.AsyncClient(transport=httpx.MockTransport(respond)))
         events = asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
         assert events[-1]["type"] == "switched"
@@ -175,4 +189,77 @@ def test_servers_saved_by_older_versions_keep_their_thinking_switch(app_db, old,
         dbmod.set_setting(conn, "model.assistant", saved)
     models.load()
     spec = models.active("assistant")
-    assert (spec.engine, spec.think_off) == ("generic", think_off)
+    assert (spec.engine, spec.think_off, spec.caps) == ("generic", think_off, engines.CAPS)
+
+
+# --- capability probe ---
+
+def probing(monkeypatch, *, image=True, schema=True, tools=True, thinks=False, stream=True, n_ctx=None, delay=0.0):
+    """A server with the given capabilities. One it lacks is refused with an error or simply not used, as real ones do."""
+    async def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v1/models":
+            return httpx.Response(200, json={"data": [{"id": "m", "max_model_len": 32768}]})
+        if request.url.path == "/props":
+            return httpx.Response(200, json={"default_generation_settings": {"n_ctx": n_ctx}}) if n_ctx else httpx.Response(404)
+        body = json.loads(request.content)
+        content = body["messages"][0]["content"]
+        thinking = {"reasoning_content": "Let me think…"} if thinks else {}
+        if body.get("stream"):
+            return answer(body, "OK") if stream else httpx.Response(200, json={"choices": [{"message": {"content": "OK"}}]})
+        if isinstance(content, list):
+            await asyncio.sleep(delay)
+            return answer(body, "47815", **thinking) if image else httpx.Response(500, json={"error": {"message": "image input is not supported"}})
+        if "response_format" in body:
+            return answer(body, '{"answer": 5}') if schema else httpx.Response(400, json={"error": {"message": "response_format not supported"}})
+        if "tools" in body:
+            calls = [{"id": "1", "type": "function", "function": {"name": "get_weather", "arguments": '{"city": "Rome"}'}}]
+            return answer(body, "", tool_calls=calls) if tools else answer(body, "I can't check the weather.")
+        return answer(body, "OK", **thinking)
+    monkeypatch.setattr(models, "_http", httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+
+
+def test_the_probe_reports_each_capability_and_stores_what_the_server_can_do(app_db, monkeypatch):
+    probing(monkeypatch, n_ctx=65536)
+    events = asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
+    assert [e["cap"] for e in events if e.get("step") == "probe"] == list(engines.CAPS[:2]) + ["vision", "json_schema", "tools"]
+    spec = models.active("assistant")
+    assert spec.caps == engines.CAPS and spec.context == 65536
+    models._active.clear()
+    models.load()                                   # survives a restart
+    assert models.active("assistant").caps == engines.CAPS
+
+
+def test_a_server_missing_optional_capabilities_is_still_used(app_db, monkeypatch):
+    probing(monkeypatch, image=False, schema=False, tools=False)
+    events = asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
+    spec = models.active("assistant")
+    assert events[-1]["type"] == "switched" and spec.caps == ("chat", "stream", "think_off")
+    assert spec.can("chat") and not spec.can("vision") and not spec.can("tools")
+    assert spec.context == 32768                    # no /props: vLLM's max_model_len
+
+
+def test_a_server_that_keeps_thinking_is_used_without_the_think_off_capability(app_db, monkeypatch):
+    probing(monkeypatch, thinks=True)
+    asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
+    spec = models.active("assistant")
+    assert spec.think_off == "reasoning_effort" and "think_off" not in spec.caps and "chat" in spec.caps
+
+
+def test_a_server_that_cannot_stream_is_not_adopted(app_db, monkeypatch):
+    probing(monkeypatch, stream=False)
+    models.load()
+    before = models.active("assistant")
+    with pytest.raises(RuntimeError, match="did not stream"):
+        asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
+    assert models.active("assistant") == before
+
+
+def test_optional_probes_that_run_out_of_time_count_as_missing(app_db, monkeypatch):
+    probing(monkeypatch, delay=5)
+    monkeypatch.setattr(models, "PROBE_BUDGET", 0.1)
+    asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
+    assert "vision" not in models.active("assistant").caps
+
+
+def test_bundled_models_have_every_capability():
+    assert all(models.LLAMA_CATALOG[0].can(cap) for cap in engines.CAPS)
