@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app import db as dbmod
-from app import models
+from app import engines, models
 
 
 def serve(monkeypatch, reply="47815"):
@@ -128,5 +128,51 @@ def test_thinking_is_turned_off_with_reasoning_effort_unless_the_server_rejects_
         monkeypatch.setattr(models, "_http", httpx.AsyncClient(transport=httpx.MockTransport(respond)))
         events = asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
         assert events[-1]["type"] == "switched"
-        assert models.active("assistant").effort_none is not strict
+        assert models.active("assistant").think_off == ("chat_template_kwargs" if strict else "reasoning_effort")
         assert bodies[-1].get("reasoning_effort") == (None if strict else "none")
+
+
+# --- engine profiles ---
+
+def test_bundled_llama_requests_are_unchanged():
+    body = {"messages": [], "repetition_penalty": 1.0, "chat_template_kwargs": {"enable_thinking": False}}
+    assert engines.prepare(models.LLAMA_CATALOG[0], body) == (body, {})
+
+
+def server(**kw):
+    return models.Spec("assistant", "http://127.0.0.1:8080/v1", "", provider="server", **{"engine": "generic", **kw})
+
+
+@pytest.mark.parametrize("mode,expected", [
+    ("chat_template_kwargs", {"chat_template_kwargs": {"enable_thinking": False}}),
+    ("reasoning_effort", {"chat_template_kwargs": {"enable_thinking": False}, "reasoning_effort": "none"}),
+    ("enable_thinking", {"enable_thinking": False}),
+])
+def test_thinking_off_is_written_the_way_the_server_was_tested_with(mode, expected):
+    body, headers = engines.prepare(server(think_off=mode, model="m", key="k"),
+                                    {"messages": [], "chat_template_kwargs": {"enable_thinking": False}})
+    assert body == {"messages": [], **expected, "model": "m"} and headers == {"Authorization": "Bearer k"}
+
+
+def test_thinking_switches_are_only_added_when_thinking_is_turned_off():
+    body, _ = engines.prepare(server(think_off="reasoning_effort"), {"messages": []})
+    assert body == {"messages": []}
+
+
+def test_fields_the_engine_refuses_are_dropped(monkeypatch):
+    monkeypatch.setitem(engines.ENGINES, "strict", engines.Engine("strict", "Strict", ("chat_template_kwargs",),
+                                                                  drop=("repetition_penalty",)))
+    body, _ = engines.prepare(server(engine="strict"), {"messages": [], "repetition_penalty": 1.0})
+    assert body == {"messages": []}
+
+
+@pytest.mark.parametrize("old,think_off", [({"effort_none": True}, "reasoning_effort"),
+                                           ({"effort_none": False}, "chat_template_kwargs"),
+                                           ({}, "chat_template_kwargs")])
+def test_servers_saved_by_older_versions_keep_their_thinking_switch(app_db, old, think_off):
+    saved = {"role": "assistant", "repo": "http://127.0.0.1:8080/v1", "file": "", "provider": "server", **old}
+    with dbmod.db() as conn:
+        dbmod.set_setting(conn, "model.assistant", saved)
+    models.load()
+    spec = models.active("assistant")
+    assert (spec.engine, spec.think_off) == ("generic", think_off)

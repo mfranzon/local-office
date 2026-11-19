@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, replace
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
-from . import runtime
+from . import engines, runtime
 from .config import HOST_CHIP, HOST_RAM_GB, HOST_VRAM_MB, MAC, MODELS_DIR, ROLES, SNAPDRAGON
 from .db import db, get_setting, recreate_vec_table, set_setting, vec
 
@@ -40,23 +40,14 @@ class Spec:
     provider: str = "llama"
     model: str = ""             # server only: which of the server's models answers (LocalAI, llama-server router)
     key: str = ""               # server only: API key
-    # server only: also send reasoning_effort "none". LocalAI ignores chat_template_kwargs, so Qwen3.5 thinks anyway,
-    # and it files JSON-schema output under "reasoning" with empty content. Servers that reject the field go without.
-    effort_none: bool = False
+    engine: str = ""            # server only: engines.ENGINES id; how its requests are written
+    think_off: str = ""         # server only: the engines.THINK_OFF switch this server was tested with
 
     @property
     def ref(self) -> str:
         if self.provider == "server":
             return self.repo + (f"#{self.model}" if self.model else "")
         return f"{self.repo}/{self.file}".rstrip("/")
-
-    @property
-    def body(self) -> dict:
-        return {**({"model": self.model} if self.model else {}), **({"reasoning_effort": "none"} if self.effort_none else {})}
-
-    @property
-    def headers(self) -> dict:
-        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
 
     @property
     def files(self) -> list[str]:
@@ -202,7 +193,7 @@ async def external(role: str, text: str) -> Spec:
         raise RuntimeError("the server must run on this computer (127.0.0.1 or localhost), so documents never leave it")
     spec = Spec(role, base, "", provider="server", model=model, key=key)
     try:
-        r = await _http.get(f"{base}/models", headers=spec.headers)
+        r = await _http.get(f"{base}/models", headers=engines.headers(spec))
     except httpx.TransportError:
         raise RuntimeError(f"no server answers at {base}: start it, then try again") from None
     if r.status_code in (401, 403):
@@ -218,7 +209,7 @@ async def external(role: str, text: str) -> Spec:
                            f"(it has: {', '.join(ids[:12])})")
     model = model or (ids[0] if ids else "")
     name = Path(model).name   # servers that load one file report its path
-    return Spec(role, base, "", name=name or base, provider="server", model=model, key=key, effort_none=True)
+    return Spec(role, base, "", name=name or base, provider="server", model=model, key=key, engine="generic")
 
 
 _active: dict[str, Spec] = {}
@@ -229,11 +220,20 @@ def load():
         for role in ROLES:
             saved = get_setting(conn, f"model.{role}")
             if isinstance(saved, dict):
-                spec = Spec(**{**saved, "tags": tuple(saved.get("tags", ())), "flags": tuple(saved.get("flags", ()))})
+                spec = Spec(**{**_migrate(saved), "tags": tuple(saved.get("tags", ())), "flags": tuple(saved.get("flags", ()))})
             else:   # first run: pick for this Mac once, so later catalog updates never switch models silently
                 spec = recommended(role)
                 set_setting(conn, f"model.{role}", asdict(spec))
             _active[role] = spec
+
+
+def _migrate(saved: dict) -> dict:
+    """Settings saved by older versions: external servers had effort_none (or nothing) instead of an engine."""
+    saved = dict(saved)
+    effort_none = saved.pop("effort_none", False)
+    if saved.get("provider") == "server" and not saved.get("engine"):
+        saved |= {"engine": "generic", "think_off": "reasoning_effort" if effort_none else "chat_template_kwargs"}
+    return saved
 
 
 def active(role: str) -> Spec:
@@ -271,7 +271,8 @@ async def test(spec: Spec, base: str) -> dict:
     """Returns facts about the model (e.g. embedding size); raises with a readable reason if unusable."""
     from .llm import NO_THINK, image_part
     if spec.role == "embed":
-        r = await _http.post(f"{base}/embeddings", json={"input": ["prova di ricerca"], **spec.body}, headers=spec.headers)
+        body, headers = engines.prepare(spec, {"input": ["prova di ricerca"]})
+        r = await _http.post(f"{base}/embeddings", json=body, headers=headers)
         if r.status_code >= 400:
             raise RuntimeError(_reason(r.text))
         return {"dim": len(r.json()["data"][0]["embedding"])}
@@ -280,9 +281,9 @@ async def test(spec: Spec, base: str) -> dict:
         content = [image_part(_test_image("Codice 47815")), {"type": "text", "text": prompt}]
     else:
         content = "Reply with the single word: OK"
-    r = await _http.post(f"{base}/chat/completions", json={
-        "messages": [{"role": "user", "content": content}], "temperature": 0, "max_tokens": 256, **NO_THINK, **spec.body},
-        headers=spec.headers)
+    body, headers = engines.prepare(spec, {
+        "messages": [{"role": "user", "content": content}], "temperature": 0, "max_tokens": 256, **NO_THINK})
+    r = await _http.post(f"{base}/chat/completions", json=body, headers=headers)
     if r.status_code >= 400:
         raise RuntimeError(_reason(r.text))
     out = r.json()["choices"][0]["message"]["content"] or ""
@@ -355,13 +356,7 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
     if is_server(ref):
         spec = await external(role, ref)
         yield {"type": "progress", "step": "test"}
-        try:
-            await test(spec, spec.repo)
-        except RuntimeError as e:
-            if "reasoning_effort" not in str(e):
-                raise
-            spec = replace(spec, effort_none=False)
-            await test(spec, spec.repo)
+        spec = await _tested_server(spec)
         with db() as conn:
             set_setting(conn, f"model.{role}", asdict(spec))
         _active[role] = spec
@@ -388,6 +383,21 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
         async for ev in reindex(spec, facts["dim"]):
             yield ev
     yield {"type": "switched", "role": role, "model": asdict(spec)}
+
+
+async def _tested_server(spec: Spec) -> Spec:
+    """spec with the first of its engine's thinking switches the server accepts. A server that refuses a switch
+    names the field in its error; any other failure is the model's and ends the test."""
+    modes = engines.engine(spec).think_off
+    for i, mode in enumerate(modes):
+        spec = replace(spec, think_off=mode)
+        try:
+            await test(spec, spec.repo)
+            return spec
+        except RuntimeError as e:
+            if i == len(modes) - 1 or mode not in str(e):
+                raise
+    raise AssertionError("unreachable")
 
 
 def _view(s: Spec) -> dict:
