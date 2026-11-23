@@ -245,6 +245,31 @@ def test_a_server_that_keeps_thinking_is_used_without_the_think_off_capability(a
     assert spec.think_off == "reasoning_effort" and "think_off" not in spec.caps and "chat" in spec.caps
 
 
+def test_a_server_that_keeps_thinking_gets_room_to_answer_the_probes(app_db, monkeypatch):
+    """A reasoning model fills a small budget with reasoning; the probes give it enough tokens to answer, and a
+    stream that only carries reasoning still proves the server streams."""
+    budgets = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path != "/v1/chat/completions":
+            return httpx.Response(404)
+        body = json.loads(request.content)
+        budgets.append(body["max_tokens"])
+        if body.get("stream"):
+            chunk = {"choices": [{"delta": {"reasoning_content": "Let me think…"}}]}
+            return httpx.Response(200, text=f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n")
+        if body["max_tokens"] < models.THINKING_PROBE_TOKENS and "response_format" in body:
+            return answer(body, "", reasoning_content="Let me think…" * 100)
+        if "response_format" in body:
+            return answer(body, '{"answer": 5}', reasoning_content="Let me think…")
+        return answer(body, "OK", reasoning_content="Let me think…")
+    monkeypatch.setattr(models, "_http", httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    events = asyncio.run(run_switch("assistant", "http://127.0.0.1:8080"))
+    assert events[-1]["type"] == "switched"
+    assert "json_schema" in models.active("assistant").caps
+    assert set(budgets[3:]) == {models.THINKING_PROBE_TOKENS}   # after the three think-off attempts
+
+
 def test_a_server_that_cannot_stream_is_not_adopted(app_db, monkeypatch):
     probing(monkeypatch, stream=False)
     models.load()
