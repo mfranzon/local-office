@@ -6,6 +6,7 @@ rebuilds the search index from the stored page text (no OCR needed).
 """
 import asyncio
 import io
+import json
 import re
 import shutil
 from pathlib import Path
@@ -42,6 +43,11 @@ class Spec:
     key: str = ""               # server only: API key
     engine: str = ""            # server only: engines.ENGINES id; how its requests are written
     think_off: str = ""         # server only: the engines.THINK_OFF switch this server was tested with
+    caps: tuple[str, ...] = ()  # server only: the engines.CAPS the server passed when probed
+
+    def can(self, cap: str) -> bool:
+        """Whether the model has an engines.CAPS capability. The bundled models' are known: they have them all."""
+        return self.provider != "server" or cap in self.caps
 
     @property
     def ref(self) -> str:
@@ -220,7 +226,8 @@ def load():
         for role in ROLES:
             saved = get_setting(conn, f"model.{role}")
             if isinstance(saved, dict):
-                spec = Spec(**{**_migrate(saved), "tags": tuple(saved.get("tags", ())), "flags": tuple(saved.get("flags", ()))})
+                saved = _migrate(saved)
+                spec = Spec(**{**saved, **{k: tuple(saved.get(k, ())) for k in ("tags", "flags", "caps")}})
             else:   # first run: pick for this Mac once, so later catalog updates never switch models silently
                 spec = recommended(role)
                 set_setting(conn, f"model.{role}", asdict(spec))
@@ -228,11 +235,14 @@ def load():
 
 
 def _migrate(saved: dict) -> dict:
-    """Settings saved by older versions: external servers had effort_none (or nothing) instead of an engine."""
+    """Settings saved by older versions: external servers had effort_none (or nothing) instead of an engine, and
+    weren't probed. They passed the old image test and were used for everything, so they keep every capability."""
     saved = dict(saved)
     effort_none = saved.pop("effort_none", False)
     if saved.get("provider") == "server" and not saved.get("engine"):
         saved |= {"engine": "generic", "think_off": "reasoning_effort" if effort_none else "chat_template_kwargs"}
+    if saved.get("provider") == "server" and "caps" not in saved:
+        saved["caps"] = engines.CAPS
     return saved
 
 
@@ -355,8 +365,11 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
         return
     if is_server(ref):
         spec = await external(role, ref)
-        yield {"type": "progress", "step": "test"}
-        spec = await _tested_server(spec)
+        async for ev in probe(spec):
+            if ev["type"] == "probed":
+                spec = ev["spec"]
+            else:
+                yield ev
         with db() as conn:
             set_setting(conn, f"model.{role}", asdict(spec))
         _active[role] = spec
@@ -385,19 +398,131 @@ async def switch(role: str, ref: str) -> AsyncIterator[dict]:
     yield {"type": "switched", "role": role, "model": asdict(spec)}
 
 
-async def _tested_server(spec: Spec) -> Spec:
-    """spec with the first of its engine's thinking switches the server accepts. A server that refuses a switch
-    names the field in its error; any other failure is the model's and ends the test."""
-    modes = engines.engine(spec).think_off
-    for i, mode in enumerate(modes):
-        spec = replace(spec, think_off=mode)
+# --- external servers: what can this one do ---
+
+PROBE_BUDGET = 240   # seconds for the optional probes together; one that doesn't fit counts as missing (#20)
+PROBE_TOKENS = 256
+THINKING_PROBE_TOKENS = 2048   # a model that can't stop thinking spends most of a probe's budget reasoning
+_PROBE_SCHEMA = {"type": "object", "properties": {"answer": {"type": "integer"}}, "required": ["answer"]}
+_PROBE_TOOL = {"type": "function", "function": {
+    "name": "get_weather", "description": "Current weather in a city",
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}
+
+
+async def probe(spec: Spec) -> AsyncIterator[dict]:
+    """Runs a tiny request per engines.CAPS on a server, yielding a progress event before each, then
+    {"type": "probed", "spec": spec} with caps, think_off and context filled in. Raises with a readable reason if
+    the server can't chat or stream; the other capabilities are optional and just left out of caps."""
+    yield {"type": "progress", "step": "probe", "cap": "chat"}
+    spec, thinks = await _probe_chat(spec)
+    tokens = THINKING_PROBE_TOKENS if thinks else PROBE_TOKENS
+    yield {"type": "progress", "step": "probe", "cap": "stream"}
+    await _probe_stream(spec, tokens)
+    caps = ["chat", "stream", *([] if thinks else ["think_off"])]
+    deadline = asyncio.get_running_loop().time() + PROBE_BUDGET
+    for cap, check in (("vision", _probe_vision), ("json_schema", _probe_json_schema), ("tools", _probe_tools)):
+        yield {"type": "progress", "step": "probe", "cap": cap}
         try:
-            await test(spec, spec.repo)
-            return spec
+            async with asyncio.timeout_at(deadline):
+                if await check(spec, tokens):
+                    caps.append(cap)
+        except (TimeoutError, RuntimeError, httpx.HTTPError, ValueError, LookupError, TypeError, AttributeError):
+            pass
+    context = await _probe_context(spec)
+    yield {"type": "probed", "spec": replace(spec, caps=tuple(caps), **({"context": context} if context else {}))}
+
+
+async def _ask(spec: Spec, content, tokens: int = PROBE_TOKENS, **params) -> dict:
+    from .llm import NO_THINK
+    body, headers = engines.prepare(spec, {"messages": [{"role": "user", "content": content}], "temperature": 0,
+                                           "max_tokens": tokens, **NO_THINK, **params})
+    r = await _http.post(f"{spec.repo}/chat/completions", json=body, headers=headers)
+    if r.status_code >= 400:
+        raise RuntimeError(_reason(r.text))
+    return r.json()["choices"][0]["message"]
+
+
+async def _probe_chat(spec: Spec) -> tuple[Spec, bool]:
+    """spec with the first of its engine's thinking switches after which the model answers without thinking, and
+    whether it still thinks (no switch works: the first one the server accepts is kept). A server that refuses a
+    switch names the field in its error; any other error is the model's and ends the probe."""
+    accepted, error = None, None
+    for mode in engines.engine(spec).think_off:
+        candidate = replace(spec, think_off=mode)
+        try:
+            msg = await _ask(candidate, "Reply with the single word: OK")
         except RuntimeError as e:
-            if i == len(modes) - 1 or mode not in str(e):
+            if mode not in str(e):
                 raise
-    raise AssertionError("unreachable")
+            error = e
+            continue
+        thinks = bool(msg.get("reasoning_content") or msg.get("reasoning"))
+        if (msg.get("content") or "").strip():
+            if not thinks:
+                return candidate, False
+            accepted = accepted or candidate
+        elif not thinks:
+            error = RuntimeError("the model returned an empty answer")
+        else:   # all of max_tokens spent thinking
+            error = RuntimeError("the model kept thinking and never answered")
+    if accepted:
+        return accepted, True
+    raise error
+
+
+async def _probe_stream(spec: Spec, tokens: int) -> None:
+    """Raises unless the server streams something back. Reasoning counts: it proves streaming works even if a
+    model that can't stop thinking runs out of tokens before it answers."""
+    from .llm import NO_THINK
+    body, headers = engines.prepare(spec, {"messages": [{"role": "user", "content": "Reply with the single word: OK"}],
+                                           "temperature": 0, "max_tokens": tokens, "stream": True, **NO_THINK})
+    text = ""
+    async with _http.stream("POST", f"{spec.repo}/chat/completions", json=body, headers=headers) as r:
+        if r.is_error:
+            raise RuntimeError(_reason((await r.aread()).decode(errors="replace")))
+        async for line in r.aiter_lines():
+            if line.startswith("data: ") and line != "data: [DONE]":
+                # servers may end with a usage-only chunk that has no choices
+                delta = (json.loads(line[6:]).get("choices") or [{}])[0].get("delta") or {}
+                text += "".join(delta.get(k) or "" for k in ("content", "reasoning_content", "reasoning"))
+    if not text.strip():
+        raise RuntimeError("the server did not stream an answer")
+
+
+async def _probe_vision(spec: Spec, tokens: int) -> bool:
+    from .llm import image_part
+    msg = await _ask(spec, [image_part(_test_image("Codice 47815")),
+                            {"type": "text", "text": "What is the number written in the image? Reply with the number only."}], tokens)
+    return "47815" in (msg.get("content") or "").replace(" ", "")
+
+
+async def _probe_json_schema(spec: Spec, tokens: int) -> bool:
+    msg = await _ask(spec, "What is 2 + 3? Reply in JSON.", tokens,
+                     response_format={"type": "json_schema", "json_schema": {"name": "probe", "schema": _PROBE_SCHEMA}})
+    return json.loads(msg.get("content") or "")["answer"] == 5   # parsed as strictly as wiki and skill routing do
+
+
+async def _probe_tools(spec: Spec, tokens: int) -> bool:
+    msg = await _ask(spec, "What is the weather in Rome right now? Use the tool.", tokens, tools=[_PROBE_TOOL])
+    return any(c["function"]["name"] == "get_weather" and isinstance(json.loads(c["function"]["arguments"] or "{}"), dict)
+               for c in msg.get("tool_calls") or [])
+
+
+async def _probe_context(spec: Spec) -> int:
+    """The server's context size, or 0 if it doesn't say: llama-server's /props, or vLLM's max_model_len."""
+    headers = engines.headers(spec)
+    try:
+        r = await _http.get(f"{spec.repo.removesuffix('/v1')}/props", headers=headers)
+        if r.status_code == 200:
+            return int(r.json()["default_generation_settings"]["n_ctx"])
+    except (httpx.HTTPError, ValueError, LookupError, TypeError):
+        pass
+    try:
+        r = await _http.get(f"{spec.repo}/models", headers=headers)
+        entry = next(m for m in r.json()["data"] if not spec.model or m["id"] == spec.model)
+        return int(entry.get("max_model_len") or 0)
+    except (httpx.HTTPError, ValueError, LookupError, TypeError, StopIteration):
+        return 0
 
 
 def _view(s: Spec) -> dict:

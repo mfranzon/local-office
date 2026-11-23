@@ -754,6 +754,10 @@ async def vision(image: UploadFile = File(...), messages: str = Form(...), mode:
             async for token in llm.chat_stream(msgs, temperature=0, repetition_penalty=1.0):
                 yield {"type": "token", "text": token}
             return
+        if not models.active("assistant").can("vision"):   # an external server that can't see: send it the text (#18)
+            text = ingest.html_tables_to_markdown(await llm.chat("ocr", [{"role": "user", "content": [
+                llm.image_part(jpeg), {"type": "text", "text": models.active("ocr").prompt}]}], max_tokens=4096))
+            history[0] = {"role": "user", "content": f"{first['content']}\n\nText read from the attached image:\n{text}"}
         msgs = [{"role": "system", "content": rag.SYSTEM_PLAIN}, *history]
         async for token in llm.chat_stream(msgs):
             yield {"type": "token", "text": token}

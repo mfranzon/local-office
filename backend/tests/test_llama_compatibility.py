@@ -116,6 +116,7 @@ def test_mac_image_actions_keep_original_assistant_stream(monkeypatch, mode):
     from app import main, rag
 
     monkeypatch.setattr(main, "SNAPDRAGON", False)
+    monkeypatch.setitem(models._active, "assistant", next(s for s in models.LLAMA_CATALOG if s.role == "assistant"))
     seen = []
 
     async def stream(messages, **kwargs):
@@ -136,6 +137,41 @@ def test_mac_image_actions_keep_original_assistant_stream(monkeypatch, mode):
     assert seen[0][0] == {"role": "system", "content": rag.SYSTEM_PLAIN}
     assert seen[0][1]["content"][0]["type"] == "image_url"
     assert seen[0][1]["content"][1]["text"] == "Read this image"
+
+
+def test_an_assistant_server_that_cannot_see_gets_the_text_read_from_the_image(monkeypatch):
+    import io
+    from fastapi.testclient import TestClient
+    from PIL import Image
+    from app import main
+
+    monkeypatch.setattr(main, "SNAPDRAGON", False)
+    blind = models.Spec("assistant", "http://127.0.0.1:8080/v1", "", provider="server", engine="generic",
+                        caps=("chat", "stream", "think_off"))
+    monkeypatch.setitem(models._active, "assistant", blind)
+    monkeypatch.setitem(models._active, "ocr", next(s for s in models.LLAMA_CATALOG if s.role == "ocr"))
+    seen, ocr_roles = [], []
+
+    async def stream(messages, **kwargs):
+        seen.append(messages)
+        yield "Image answer"
+
+    async def ocr(role, messages, **kwargs):
+        ocr_roles.append(role)
+        assert messages[0]["content"][0]["type"] == "image_url"
+        return "Codice 47815"
+
+    monkeypatch.setattr(llm, "chat_stream", stream)
+    monkeypatch.setattr(llm, "chat", ocr)
+    image = io.BytesIO()
+    Image.new("RGB", (32, 32), "white").save(image, "PNG")
+    client = TestClient(main.app, base_url="http://127.0.0.1")
+    response = client.post("/api/vision", files={"image": ("page.png", image.getvalue(), "image/png")},
+        data={"mode": "vision", "messages": json.dumps([{"role": "user", "content": "Read this image"}])})
+    assert response.status_code == 200 and "Image answer" in response.text
+    assert ocr_roles == ["ocr"]
+    question = seen[0][1]["content"]
+    assert isinstance(question, str) and question.startswith("Read this image") and "Codice 47815" in question
 
 
 def test_llama_http_completion_streaming_images_and_embeddings(monkeypatch):
